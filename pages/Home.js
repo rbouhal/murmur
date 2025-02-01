@@ -14,12 +14,7 @@ import * as Location from "expo-location";
 import { useTheme } from "../context/ThemeContext";
 import CustomCard from "../components/CustomCard";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import {
-  connectToWebSocket,
-  disconnectFromWebSocket,
-  sendDataToBackend,
-  sendAudioToAzure,
-} from "../services/network";
+import { sendAudioToAzure } from "../services/network";
 import { Audio } from "expo-av";
 
 const recordingOptions = {
@@ -75,10 +70,9 @@ export default function Home() {
   const toggleListening = (value) => {
     setIsListening(value);
     if (value) {
-      sendDataToBackend();
-      connectToWebSocket(); // Start WebSocket & audio streaming
+      // Todo
     } else {
-      disconnectFromWebSocket(); // Stop WebSocket & audio streaming
+      // Todo
     }
   };
 
@@ -238,182 +232,7 @@ export default function Home() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isTracking]);
-
-  const Item = ({ item }) => {
-    return <View style={styles.item}>{item.icon}</View>;
-  };
-  const itemData = [
-    {
-      id: "1",
-      icon: (
-        <View style={styles.permissionRow}>
-          <Ionicons name="flag-outline" size={27} style={styles.primaryTextColorIcon} />
-          <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
-        </View>
-      ),
-    },
-    {
-      id: "2",
-      icon: (
-        <View style={styles.permissionRow}>
-          <Ionicons
-            name="warning-outline"
-            size={27}
-            style={styles.primaryTextColorIcon}
-          />
-          <Text style={[styles.p, { color: theme.text }]}>Emergency</Text>
-        </View>
-      ),
-    },
-    {
-      id: "3",
-      icon: (
-        <TouchableOpacity
-          onPress={() => {
-            if (activeRecordingType === "redFlag") {
-              stopRecording("redFlag");
-              setActiveRecordingType(null);
-            } else if (activeRecordingType === "emergency") {
-              stopRecording("emergency");
-              setActiveRecordingType("redFlag");
-              startRecording();
-            } else {
-              // activeRecordingType is null
-              startRecording();
-              setActiveRecordingType("redFlag");
-            }
-          }}
-          style={
-            activeRecordingType === "redFlag" ? styles.micOn : styles.micOff
-          }
-        >
-          <Ionicons name="mic" size={27} style={styles.secondaryColorIcon} />
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: "4",
-      icon: (
-        <TouchableOpacity
-          onPress={() => {
-            if (activeRecordingType === "emergency") {
-              stopRecording("emergency");
-              setActiveRecordingType(null);
-            } else if (activeRecordingType === "redFlag") {
-              stopRecording("redFlag");
-              setActiveRecordingType("emergency");
-              startRecording();
-            } else {
-              // activeRecordingType is null
-              startRecording();
-              setActiveRecordingType("emergency");
-            }
-          }}
-          style={
-            activeRecordingType === "emergency" ? styles.micOn : styles.micOff
-          }
-        >
-          <Ionicons name="mic" size={27} style={styles.secondaryColorIcon} />
-        </TouchableOpacity>
-      ),
-    },
-  ];
-
-  const Listen = ({ listen }) => {
-    return <View style={styles.item}>{listen.icon}</View>;
-  };
-  const listenData = [
-    {
-      id: "1",
-      icon: (
-        <View style={styles.permissionRow}>
-          <Ionicons name="flag-outline" size={27} style={styles.primaryTextColorIcon} />
-          <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
-        </View>
-      ),
-    },
-    {
-      id: "2",
-      icon: (
-        <View style={styles.permissionRow}>
-          <Ionicons
-            name="warning-outline"
-            size={27}
-            style={styles.primaryTextColorIcon}
-          />
-          <Text style={[styles.p, { color: theme.text }]}>Emergency</Text>
-        </View>
-      ),
-    },
-    {
-      id: "3",
-      icon: (
-        <View
-          style={{
-            flex: 1,
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "space-evenly",
-            gap: 10,
-          }}
-        >
-          <TouchableOpacity onPress={() => setShowRedFlagWord((prev) => !prev)}>
-            <Ionicons
-              name={showRedFlagWord ? "eye-off" : "eye"}
-              size={27}
-              style={styles.secondaryColorIcon}
-            />
-          </TouchableOpacity>
-          <Text style={[styles.p, { color: theme.text, textAlign: "center" }]}>
-            {showRedFlagWord ? redFlagSafeWord || "(not recorded yet)" : ""}
-          </Text>
-          <TouchableOpacity onPress={playRedFlagRecording}>
-            <Ionicons
-              name="play-circle"
-              size={27}
-              style={styles.secondaryColorIcon}
-            />
-          </TouchableOpacity>
-        </View>
-      ),
-    },
-    // Eye icon for Emergency
-    {
-      id: "4",
-      icon: (
-        <View
-          style={{
-            flex: 1,
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "space-evenly",
-            gap: 10,
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => setShowEmergencyWord((prev) => !prev)}
-          >
-            <Ionicons
-              name={showEmergencyWord ? "eye-off" : "eye"}
-              size={27}
-              style={styles.secondaryColorIcon}
-            />
-          </TouchableOpacity>
-          <Text style={[styles.p, { color: theme.text, textAlign: "center" }]}>
-            {showEmergencyWord ? emergencySafeWord || "(not recorded yet)" : ""}
-          </Text>
-          <TouchableOpacity onPress={playEmergencyRecording}>
-            <Ionicons
-              name="play-circle"
-              size={27}
-              style={styles.secondaryColorIcon}
-            />
-          </TouchableOpacity>
-        </View>
-      ),
-    },
-  ];
-
+  
   return (
     <ScrollView
       style={styles.container}
@@ -494,15 +313,6 @@ export default function Home() {
             each event.
           </Text>
         </View>
-        {/* <View style={styles.padding}>
-          <FlatList
-            data={itemData}
-            numColumns={2}
-            renderItem={Item}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-          />
-        </View> */}
         <View style={{ flexDirection: "row" }}>
           <View style={styles.borderBox}>
             <Ionicons
@@ -579,6 +389,8 @@ export default function Home() {
           </Text>
         </View>
         <View style={{ flexDirection: "row" }}>
+
+          {/* Red Flag Box */}
           <View style={styles.borderBox}>
             <Ionicons
               name="flag-outline"
@@ -586,20 +398,40 @@ export default function Home() {
               style={styles.primaryTextColorIcon}
             />
             <Text style={[styles.cardH1, { color: theme.text }]}>Red Flag</Text>
-            <View>
-              <Ionicons
-                name="eye"
-                size={22}
-                style={[styles.secondaryColorIcon, { paddingVertical: 5 }]}
-              />
 
-            </View>
-            <Ionicons
-              name="play-circle"
-              size={32}
-              style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
-            />
+            {redFlagSafeWord && (
+              <>
+                <TouchableOpacity
+                  onPress={() => setShowRedFlagWord((prev) => !prev)}
+                  style={{ flexDirection: "row", alignItems: "center" }} // Align icon and text/dots horizontally
+                >
+                  <Ionicons
+                    name={showRedFlagWord ? "eye" : "eye-off"}
+                    size={22}
+                    style={[styles.secondaryColorIcon, { paddingVertical: 5 }]}
+                  />
+                  {/* Wrap text in a <Text> component */}
+                  <Text style={[styles.p, { color: theme.text }]}>
+                    {showRedFlagWord ? redFlagSafeWord : "•••••••"}
+                  </Text>
+                </TouchableOpacity>
 
+                <TouchableOpacity onPress={playRedFlagRecording}>
+                  <Ionicons
+                    name="play-circle"
+                    size={32}
+                    style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+            {!redFlagSafeWord && (
+              <View style={styles.transparentPill}>
+                <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+                  No Recording
+                </Text>
+              </View>
+            )}
           </View>
           <View style={styles.borderBox}>
             <Ionicons
@@ -608,6 +440,55 @@ export default function Home() {
               style={styles.primaryTextColorIcon}
             />
             <Text style={[styles.cardH1, { color: theme.text }]}>Emergency</Text>
+
+            {/* Eye Icon and Safe Word */}
+            {emergencySafeWord && (
+              <>
+                <TouchableOpacity
+                  onPress={() => setShowEmergencyWord((prev) => !prev)}
+                  style={{ flexDirection: "row", alignItems: "center" }}
+                >
+                  <Ionicons
+                    name={showEmergencyWord ? "eye" : "eye-off"}
+                    size={22}
+                    style={[styles.secondaryColorIcon, { paddingVertical: 5 }]}
+                  />
+                  {/* Wrap text directly in a <Text> component */}
+                  <Text
+                    style={[
+                      styles.p,
+                      {
+                        color: theme.text,
+                        maxWidth: "80%", // Limit the width of the text
+                        flexShrink: 1, // Allow text to shrink
+                      },
+                    ]}
+                    numberOfLines={1} // Ensure text stays on one line
+                    ellipsizeMode="tail" // Add ellipsis if text overflows
+                  >
+                    {showEmergencyWord ? emergencySafeWord : "•••••••"}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Play Button */}
+                <TouchableOpacity onPress={playEmergencyRecording}>
+                  <Ionicons
+                    name="play-circle"
+                    size={32}
+                    style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+            {!emergencySafeWord && (
+              <View style={styles.transparentPill}>
+                <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+                  No Recording
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
             <View style={styles.emptyBox}>
               <Text style={{ color: theme.text }}>No Voice Profile</Text>
             </View>
@@ -795,10 +676,14 @@ const getStyles = (theme) =>
       alignItems: "center",
       justifyContent: "center",
       alignSelf: "center",
+    },
+
+    transparentPill: {
+      backgroundColor: theme.text + '40',
+      paddingVertical: 5,
+      borderRadius: 20,
+      borderColor: theme.text,
+      borderWidth: 0.25,
+      marginVertical: 18
     }
-
-
-
-
-
   });
