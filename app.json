@@ -15,7 +15,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rbouhal.murmur",
-      "NSLocationWhenInUseUsageDescription": "We need your location to show it on the screen."
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to show it on the screen.",
+        "NSMicrophoneUsageDescription": "We need access to your microphone to stream audio."
+      },
+      "appleTeamId": "GZR2XN3LP2"
     },
     "android": {
       "adaptiveIcon": {

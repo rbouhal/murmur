@@ -1,20 +1,212 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Switch, StyleSheet, Alert, Modal, TouchableOpacity, FlatList, ScrollView } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import {
+  Button,
+  View,
+  Text,
+  Switch,
+  StyleSheet,
+  Alert,
+  Modal,
+  TouchableOpacity,
+  FlatList,
+  ScrollView,
+} from "react-native";
 import * as Location from "expo-location";
-import { useTheme } from '../context/ThemeContext';
-import CustomCard from '../components/CustomCard';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTheme } from "../context/ThemeContext";
+import CustomCard from "../components/CustomCard";
+import Ionicons from "react-native-vector-icons/Ionicons";
+import {
+  connectToWebSocket,
+  disconnectFromWebSocket,
+  sendDataToBackend,
+  sendAudioToAzure,
+} from "../services/network";
+import { Audio } from "expo-av";
 
-
+const recordingOptions = {
+  isMeteringEnabled: false,
+  android: {
+    extension: ".wav",
+    outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
+    audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_PCM_16BIT,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 256000,
+  },
+  ios: {
+    extension: ".wav",
+    outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
+    audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 256000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+};
 
 export default function Home() {
+  const [activeRecordingType, setActiveRecordingType] = useState(null);
+
+  const [redFlagSafeWord, setRedFlagSafeWord] = useState("");
+  const [emergencySafeWord, setEmergencySafeWord] = useState("");
+
+  const [recordingRedFlag, setRecordingRedFlag] = useState(null);
+  const [recordingEmergency, setRecordingEmergency] = useState(null);
+
+  const [redFlagSound, setRedFlagSound] = useState(null);
+  const [emergencySound, setEmergencySound] = useState(null);
+
+  const [showRedFlagWord, setShowRedFlagWord] = useState(false);
+  const [showEmergencyWord, setShowEmergencyWord] = useState(false);
+
   const [isTracking, setIsTracking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [recording, setRecording] = useState();
+
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [savedContacts, setSavedContacts] = useState({});
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
+  // Handle switch toggle
+  const toggleListening = (value) => {
+    setIsListening(value);
+    if (value) {
+      connectToWebSocket(); // Start WebSocket & audio streaming
+    } else {
+      disconnectFromWebSocket(); // Stop WebSocket & audio streaming
+    }
+  };
+
+  async function startRecording() {
+    try {
+      if (permissionResponse.status !== "granted") {
+        console.log("Requesting Permission");
+        await requestPermission();
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      console.log("Start recording...");
+      const { recording } = await Audio.Recording.createAsync(recordingOptions);
+      setRecording(recording);
+      console.log("Recording Started");
+    } catch (err) {
+      console.log("Failed to start recording", err);
+    }
+  }
+
+  async function stopRecording(type) {
+    console.log("Stopping recording..");
+    setRecording(undefined);
+
+    await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+    });
+    const uri = recording.getURI();
+    console.log(`${type} recording stored at:`, uri);
+
+    const response = await sendAudioToAzure(uri);
+    console.log("Response: ", response);
+    const recognizedText = response?.DisplayText || "";
+    cleanedText = recognizedText.replace(/[!.,]/g, "");
+    console.log("Stripped text", cleanedText);
+
+    if (type === "redFlag") {
+      if (cleanedText !== "" && cleanedText) {
+        setRecordingRedFlag(recording);
+      } else {
+        setRecordingRedFlag(null);
+      }
+      setRedFlagSafeWord(cleanedText);
+    } else if (type === "emergency") {
+      if (cleanedText !== "" && cleanedText) {
+        setRecordingEmergency(recording);
+      } else {
+        setRecordingEmergency(null);
+      }
+      setEmergencySafeWord(cleanedText);
+    }
+
+    return cleanedText;
+  }
+
+  // Playback for Red Flag
+  async function playRedFlagRecording() {
+    try {
+      if (!recordingRedFlag) {
+        Alert.alert(
+          "No Red Flag recording",
+          "Please record a Red Flag trigger first."
+        );
+        return;
+      }
+      // If we already have a sound loaded, unload it first
+      if (redFlagSound) {
+        await redFlagSound.unloadAsync();
+        setRedFlagSound(null);
+      }
+      const { sound } = await Audio.Sound.createAsync({
+        uri: recordingRedFlag.getURI(),
+      });
+      setRedFlagSound(sound);
+
+      console.log("Playing Red Flag Sound...");
+      await sound.playAsync();
+    } catch (error) {
+      console.log("Error playing Red Flag recording:", error);
+    }
+  }
+
+  // Playback for Emergency
+  async function playEmergencyRecording() {
+    try {
+      if (!recordingEmergency) {
+        Alert.alert(
+          "No Emergency recording",
+          "Please record an Emergency trigger first."
+        );
+        return;
+      }
+      if (emergencySound) {
+        await emergencySound.unloadAsync();
+        setEmergencySound(null);
+      }
+      const { sound } = await Audio.Sound.createAsync({
+        uri: recordingEmergency.getURI(),
+      });
+      setEmergencySound(sound);
+
+      console.log("Playing Emergency Sound...");
+      await sound.playAsync();
+    } catch (error) {
+      console.log("Error playing Emergency recording:", error);
+    }
+  }
+
+  const fetchUserData = async () => {
+    try {
+      console.log("Sending Data to Backend");
+      sendDataToBackend();
+    } catch (error) {
+      console.error("Error fetching saved contacts:", error);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUserData();
+    }, [])
+  );
 
   const handleInfoPress = () => {
     setIsOverlayVisible(true);
@@ -23,7 +215,6 @@ export default function Home() {
   const closeOverlay = () => {
     setIsOverlayVisible(false);
   };
-
 
   useEffect(() => {
     let intervalId;
@@ -65,28 +256,21 @@ export default function Home() {
     };
   }, [isTracking]);
 
-
   const Item = ({ item }) => {
     return <View style={styles.item}>{item.icon}</View>;
   };
   const itemData = [
     {
-      id: '1',
+      id: "1",
       icon: (
         <View style={styles.permissionRow}>
-          <Ionicons
-            name="flag"
-            size={27}
-            style={styles.primaryTextColorIcon}
-          />
-          <Text style={[styles.p, { color: theme.text }]}>
-            Red Flag
-          </Text>
+          <Ionicons name="flag" size={27} style={styles.primaryTextColorIcon} />
+          <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
         </View>
-      )
+      ),
     },
     {
-      id: '2',
+      id: "2",
       icon: (
         <View style={styles.permissionRow}>
           <Ionicons
@@ -94,32 +278,62 @@ export default function Home() {
             size={27}
             style={styles.primaryTextColorIcon}
           />
-          <Text style={[styles.p, { color: theme.text }]}>
-            Emergency
-          </Text>
+          <Text style={[styles.p, { color: theme.text }]}>Emergency</Text>
         </View>
-      )
+      ),
     },
     {
-      id: '3',
+      id: "3",
       icon: (
-        <Ionicons
-          name="mic"
-          size={27}
-          style={styles.secondaryColorIcon}
-        />
-      )
+        <TouchableOpacity
+          onPress={() => {
+            if (activeRecordingType === "redFlag") {
+              stopRecording("redFlag");
+              setActiveRecordingType(null);
+            } else if (activeRecordingType === "emergency") {
+              stopRecording("emergency");
+              setActiveRecordingType("redFlag");
+              startRecording();
+            } else {
+              // activeRecordingType is null
+              startRecording();
+              setActiveRecordingType("redFlag");
+            }
+          }}
+          style={
+            activeRecordingType === "redFlag" ? styles.micOn : styles.micOff
+          }
+        >
+          <Ionicons name="mic" size={27} style={styles.secondaryColorIcon} />
+        </TouchableOpacity>
+      ),
     },
     {
-      id: '4',
+      id: "4",
       icon: (
-        <Ionicons
-          name="mic"
-          size={27}
-          style={styles.secondaryColorIcon}
-        />
-      )
-    }
+        <TouchableOpacity
+          onPress={() => {
+            if (activeRecordingType === "emergency") {
+              stopRecording("emergency");
+              setActiveRecordingType(null);
+            } else if (activeRecordingType === "redFlag") {
+              stopRecording("redFlag");
+              setActiveRecordingType("emergency");
+              startRecording();
+            } else {
+              // activeRecordingType is null
+              startRecording();
+              setActiveRecordingType("emergency");
+            }
+          }}
+          style={
+            activeRecordingType === "emergency" ? styles.micOn : styles.micOff
+          }
+        >
+          <Ionicons name="mic" size={27} style={styles.secondaryColorIcon} />
+        </TouchableOpacity>
+      ),
+    },
   ];
 
   const Listen = ({ listen }) => {
@@ -127,22 +341,16 @@ export default function Home() {
   };
   const listenData = [
     {
-      id: '1',
+      id: "1",
       icon: (
         <View style={styles.permissionRow}>
-          <Ionicons
-            name="flag"
-            size={27}
-            style={styles.primaryTextColorIcon}
-          />
-          <Text style={[styles.p, { color: theme.text }]}>
-            Red Flag
-          </Text>
+          <Ionicons name="flag" size={27} style={styles.primaryTextColorIcon} />
+          <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
         </View>
-      )
+      ),
     },
     {
-      id: '2',
+      id: "2",
       icon: (
         <View style={styles.permissionRow}>
           <Ionicons
@@ -150,32 +358,77 @@ export default function Home() {
             size={27}
             style={styles.primaryTextColorIcon}
           />
-          <Text style={[styles.p, { color: theme.text }]}>
-            Emergency
-          </Text>
+          <Text style={[styles.p, { color: theme.text }]}>Emergency</Text>
         </View>
-      )
+      ),
     },
     {
-      id: '3',
+      id: "3",
       icon: (
-        <Ionicons
-          name="eye"
-          size={27}
-          style={styles.secondaryColorIcon}
-        />
-      )
+        <View
+          style={{
+            flex: 1,
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "space-evenly",
+            gap: 10,
+          }}
+        >
+          <TouchableOpacity onPress={() => setShowRedFlagWord((prev) => !prev)}>
+            <Ionicons
+              name={showRedFlagWord ? "eye-off" : "eye"}
+              size={27}
+              style={styles.secondaryColorIcon}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.p, { color: theme.text, textAlign: "center" }]}>
+            {showRedFlagWord ? redFlagSafeWord || "(not recorded yet)" : ""}
+          </Text>
+          <TouchableOpacity onPress={playRedFlagRecording}>
+            <Ionicons
+              name="play-circle"
+              size={27}
+              style={styles.secondaryColorIcon}
+            />
+          </TouchableOpacity>
+        </View>
+      ),
     },
+    // Eye icon for Emergency
     {
-      id: '4',
+      id: "4",
       icon: (
-        <Ionicons
-          name="eye"
-          size={27}
-          style={styles.secondaryColorIcon}
-        />
-      )
-    }
+        <View
+          style={{
+            flex: 1,
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "space-evenly",
+            gap: 10,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => setShowEmergencyWord((prev) => !prev)}
+          >
+            <Ionicons
+              name={showEmergencyWord ? "eye-off" : "eye"}
+              size={27}
+              style={styles.secondaryColorIcon}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.p, { color: theme.text, textAlign: "center" }]}>
+            {showEmergencyWord ? emergencySafeWord || "(not recorded yet)" : ""}
+          </Text>
+          <TouchableOpacity onPress={playEmergencyRecording}>
+            <Ionicons
+              name="play-circle"
+              size={27}
+              style={styles.secondaryColorIcon}
+            />
+          </TouchableOpacity>
+        </View>
+      ),
+    },
   ];
 
   return (
@@ -183,17 +436,13 @@ export default function Home() {
       style={styles.container}
       showsVerticalScrollIndicator={false} // Optional: hides vertical scroll indicator
     >
-
       {/* Permissions Card */}
       <CustomCard>
         <View style={styles.headerContainer}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>
             Permissions
           </Text>
-          <TouchableOpacity
-            onPress={handleInfoPress}
-            style={styles.infoIcon}
-          >
+          <TouchableOpacity onPress={handleInfoPress} style={styles.infoIcon}>
             <Ionicons
               name="information-circle-outline"
               size={27}
@@ -205,7 +454,11 @@ export default function Home() {
         {/* Enable Location Section */}
         <View style={[styles.permissionRow, styles.spaceAround]}>
           <View style={styles.primaryTextColorIcon}>
-            <Ionicons name="navigate-circle" size={33} style={styles.primaryTextColorIcon} />
+            <Ionicons
+              name="navigate-circle"
+              size={33}
+              style={styles.primaryTextColorIcon}
+            />
             <Text style={[styles.permissionText, { color: theme.text }]}>
               Enable Location
             </Text>
@@ -221,20 +474,22 @@ export default function Home() {
         {/* Enable Listening Section */}
         <View style={[styles.permissionRow, styles.spaceAround]}>
           <View style={styles.primaryTextColorIcon}>
-            <Ionicons name="mic-circle" size={33} style={styles.primaryTextColorIcon} />
+            <Ionicons
+              name="mic-circle"
+              size={33}
+              style={styles.primaryTextColorIcon}
+            />
             <Text style={[styles.permissionText, { color: theme.text }]}>
               Enable Listening
             </Text>
           </View>
           <Switch
-            value={isTracking}
-            onValueChange={setIsTracking}
+            value={isListening}
+            onValueChange={toggleListening}
             thumbColor={theme.text}
             trackColor={{ false: theme.secondary, true: theme.secondary }}
           />
         </View>
-
-
       </CustomCard>
 
       {/* Required Setup Card */}
@@ -252,7 +507,8 @@ export default function Home() {
         </View>
         <View>
           <Text style={[styles.p, { color: theme.text }]}>
-            Choose and then record yourself saying a distinct trigger word for each event.
+            Choose and then record yourself saying a distinct trigger word for
+            each event.
           </Text>
         </View>
         <View style={styles.padding}>
@@ -279,12 +535,7 @@ export default function Home() {
             scrollEnabled={false}
           />
         </View>
-
-
-
-
       </CustomCard>
-
 
       {/* Overlay Modal */}
       <Modal
@@ -296,11 +547,10 @@ export default function Home() {
         <View style={styles.overlayContainer}>
           <View style={styles.overlayContent}>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              1. Complete the "Required Setup" by enrolling your voice profile and setting your "Safe Words" on the Home Page.
+              1. Complete the "Required Setup" by enrolling your voice profile
+              and setting your "Safe Words" on the Home Page.
             </Text>
-            <Text style={[styles.overlayText, { color: theme.text }]}>
-              2. 
-            </Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>2.</Text>
             <TouchableOpacity style={styles.closeButton} onPress={closeOverlay}>
               <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
@@ -329,10 +579,10 @@ const getStyles = (theme) =>
       paddingVertical: 20,
     },
     headerContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'flex-start',
-      padding: 15
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-start",
+      padding: 15,
     },
     cardTitle: {
       fontWeight: "bold",
@@ -356,21 +606,20 @@ const getStyles = (theme) =>
       paddingBottom: 10,
     },
 
-
     spaceAround: {
-      justifyContent: 'space-between',
-      marginHorizontal: 20
+      justifyContent: "space-between",
+      marginHorizontal: 20,
     },
 
     primaryTextColorIcon: {
       color: theme.text,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
     },
 
     secondaryColorIcon: {
-      color: theme.secondary
+      color: theme.secondary,
     },
     permissionText: {
       fontSize: 16,
@@ -406,9 +655,13 @@ const getStyles = (theme) =>
     item: {
       flex: 1,
       maxWidth: "50%",
-      height: '100%',
-      overflow: 'hidden',
+      height: "100%",
+      overflow: "hidden",
       alignItems: "center",
-    }
+    },
 
+    micOn: {
+      backgroundColor: theme.primary,
+      borderRadius: 20,
+    },
   });
