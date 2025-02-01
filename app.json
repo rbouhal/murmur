@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "murmur",
+    "slug": "murmur",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#d2b7e5"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rbouhal.murmur",
+      "NSLocationWhenInUseUsageDescription": "We need your location to show it on the screen."
+    },
+    "android": {
+      "adaptiveIcon": {
+        "permissions": [
+          "ACCESS_FINE_LOCATION",
+          "ACCESS_COARSE_LOCATION"
+        ],
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#d2b7e5"
+      },
+      "package": "com.rbouhal.murmur"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8679c0e5-c0d1-4eb7-8e1b-ebcd02e735ee"
+      }
+    },
+    "owner": "hokiecoders",
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
