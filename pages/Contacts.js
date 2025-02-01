@@ -144,7 +144,6 @@ export default function ContactsPage({ searchText }) {
   };
 
   useEffect(() => {
-    fetchSavedContacts();
     fetchDeviceContacts();
   }, []);
 
