@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useFocusEffect } from "@react-navigation/native";
 import {
-  Button,
   View,
   Text,
   Switch,
@@ -70,7 +68,6 @@ export default function Home() {
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [savedContacts, setSavedContacts] = useState({});
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
@@ -78,6 +75,7 @@ export default function Home() {
   const toggleListening = (value) => {
     setIsListening(value);
     if (value) {
+      sendDataToBackend();
       connectToWebSocket(); // Start WebSocket & audio streaming
     } else {
       disconnectFromWebSocket(); // Stop WebSocket & audio streaming
@@ -146,7 +144,7 @@ export default function Home() {
       if (!recordingRedFlag) {
         Alert.alert(
           "No Red Flag recording",
-          "Please record a Red Flag trigger first."
+          "Please record a Red Flag safe word first."
         );
         return;
       }
@@ -192,21 +190,6 @@ export default function Home() {
       console.log("Error playing Emergency recording:", error);
     }
   }
-
-  const fetchUserData = async () => {
-    try {
-      console.log("Sending Data to Backend");
-      sendDataToBackend();
-    } catch (error) {
-      console.error("Error fetching saved contacts:", error);
-    }
-  };
-
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchUserData();
-    }, [])
-  );
 
   const handleInfoPress = () => {
     setIsOverlayVisible(true);
@@ -264,7 +247,7 @@ export default function Home() {
       id: "1",
       icon: (
         <View style={styles.permissionRow}>
-          <Ionicons name="flag" size={27} style={styles.primaryTextColorIcon} />
+          <Ionicons name="flag-outline" size={27} style={styles.primaryTextColorIcon} />
           <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
         </View>
       ),
@@ -274,7 +257,7 @@ export default function Home() {
       icon: (
         <View style={styles.permissionRow}>
           <Ionicons
-            name="warning"
+            name="warning-outline"
             size={27}
             style={styles.primaryTextColorIcon}
           />
@@ -344,7 +327,7 @@ export default function Home() {
       id: "1",
       icon: (
         <View style={styles.permissionRow}>
-          <Ionicons name="flag" size={27} style={styles.primaryTextColorIcon} />
+          <Ionicons name="flag-outline" size={27} style={styles.primaryTextColorIcon} />
           <Text style={[styles.p, { color: theme.text }]}>Red Flag</Text>
         </View>
       ),
@@ -354,7 +337,7 @@ export default function Home() {
       icon: (
         <View style={styles.permissionRow}>
           <Ionicons
-            name="warning"
+            name="warning-outline"
             size={27}
             style={styles.primaryTextColorIcon}
           />
@@ -507,11 +490,11 @@ export default function Home() {
         </View>
         <View>
           <Text style={[styles.p, { color: theme.text }]}>
-            Choose and then record yourself saying a distinct trigger word for
+            Choose and then record yourself saying a distinct "Safe Word" for
             each event.
           </Text>
         </View>
-        <View style={styles.padding}>
+        {/* <View style={styles.padding}>
           <FlatList
             data={itemData}
             numColumns={2}
@@ -519,12 +502,116 @@ export default function Home() {
             keyExtractor={(item) => item.id}
             scrollEnabled={false}
           />
+        </View> */}
+        <View style={{ flexDirection: "row" }}>
+          <View style={styles.borderBox}>
+            <Ionicons
+              name="flag-outline"
+              size={22}
+              style={styles.primaryTextColorIcon}
+            />
+            <Text style={[styles.cardH1, { color: theme.text }]}>Red Flag</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (activeRecordingType === "redFlag") {
+                  stopRecording("redFlag");
+                  setActiveRecordingType(null);
+                } else if (activeRecordingType === "emergency") {
+                  stopRecording("emergency");
+                  setActiveRecordingType("redFlag");
+                  startRecording();
+                } else {
+                  // activeRecordingType is null
+                  startRecording();
+                  setActiveRecordingType("redFlag");
+                }
+              }}
+              style={
+                activeRecordingType === "redFlag" ? styles.micOn : styles.micOff
+              }
+            >
+              <Ionicons
+                name="mic"
+                size={33}
+                style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+              />
+            </TouchableOpacity>
+
+          </View>
+          <View style={styles.borderBox}>
+            <Ionicons
+              name="warning-outline"
+              size={22}
+              style={styles.primaryTextColorIcon}
+            />
+            <Text style={[styles.cardH1, { color: theme.text }]}>Emergency</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (activeRecordingType === "emergency") {
+                  stopRecording("emergency");
+                  setActiveRecordingType(null);
+                } else if (activeRecordingType === "redFlag") {
+                  stopRecording("redFlag");
+                  setActiveRecordingType("emergency");
+                  startRecording();
+                } else {
+                  // activeRecordingType is null
+                  startRecording();
+                  setActiveRecordingType("emergency");
+                }
+              }}
+              style={
+                activeRecordingType === "emergency" ? styles.micOn : styles.micOff
+              }
+            >
+              <Ionicons
+                name="mic"
+                size={33}
+                style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.hr} />
         <View style={styles.headerContainer}>
           <Text style={[styles.cardH1, { color: theme.text }]}>
-            Your Trigger Words
+            Your Safe Words
           </Text>
+        </View>
+        <View style={{ flexDirection: "row" }}>
+          <View style={styles.borderBox}>
+            <Ionicons
+              name="flag-outline"
+              size={22}
+              style={styles.primaryTextColorIcon}
+            />
+            <Text style={[styles.cardH1, { color: theme.text }]}>Red Flag</Text>
+            <View>
+              <Ionicons
+                name="eye"
+                size={22}
+                style={[styles.secondaryColorIcon, { paddingVertical: 5 }]}
+              />
+
+            </View>
+            <Ionicons
+              name="play-circle"
+              size={32}
+              style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+            />
+
+          </View>
+          <View style={styles.borderBox}>
+            <Ionicons
+              name="warning-outline"
+              size={22}
+              style={styles.primaryTextColorIcon}
+            />
+            <Text style={[styles.cardH1, { color: theme.text }]}>Emergency</Text>
+            <View style={styles.emptyBox}>
+              <Text style={{ color: theme.text }}>No Voice Profile</Text>
+            </View>
+          </View>
         </View>
         <View style={styles.padding}>
           <FlatList
@@ -547,10 +634,26 @@ export default function Home() {
         <View style={styles.overlayContainer}>
           <View style={styles.overlayContent}>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              1. Complete the "Required Setup" by enrolling your voice profile
-              and setting your "Safe Words" on the Home Page.
+              First, set up your voice profile and record your safe words on the Home Page.
             </Text>
-            <Text style={[styles.overlayText, { color: theme.text }]}>2.</Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>
+              Next, go to the Contacts page to add existing or custom contacts, assigning them a priority level:
+            </Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>
+              <Ionicons name="flag-outline" size={16} color={theme.text} />{" "}
+              <Text style={{ fontWeight: 'bold' }}>Red Flag:</Text> A situation that feels unsafe or distressing but does not require immediate intervention.{"\n\n"}
+              <Ionicons name="warning-outline" size={16} color={theme.text} />{" "}
+              <Text style={{ fontWeight: 'bold' }}>Emergency:</Text> A crisis where your safety is in immediate danger and urgent help is needed.
+            </Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>
+              Optionally, Enable Location sharing to include your live location in automated messages.
+            </Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>
+              Once set up, turn on Enable Listening to detect safe words and send alerts to your contacts.
+            </Text>
+            <Text style={[styles.overlayText, { color: theme.text }]}>
+              Shhhhhh...<Text style={{ fontWeight: 'bold' }}>murmur</Text>
+            </Text>
             <TouchableOpacity style={styles.closeButton} onPress={closeOverlay}>
               <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
@@ -582,7 +685,8 @@ const getStyles = (theme) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "flex-start",
-      padding: 15,
+      paddingVertical: 10,
+      paddingHorizontal: 15,
     },
     cardTitle: {
       fontWeight: "bold",
@@ -594,6 +698,7 @@ const getStyles = (theme) =>
     },
     p: {
       paddingLeft: 15,
+      paddingVertical: 10
     },
     infoIcon: {
       marginLeft: 8,
@@ -652,16 +757,48 @@ const getStyles = (theme) =>
       fontWeight: "bold",
     },
 
+    borderBox: {
+      borderWidth: 1,
+      borderColor: theme.secondary,
+      borderRadius: 20,
+      width: 140,
+      marginHorizontal: 20,
+      padding: 10
+    },
+
+    emptyBox: {
+      borderWidth: 1,
+      borderColor: theme.primary,
+      borderRadius: 20,
+      paddingVertical: 5,
+      paddingHorizontal: 6,
+      backgroundColor: theme.text + '40',  // '40' represents 25% opacity in hex
+      marginVertical: 15,
+    },
+
     item: {
       flex: 1,
       maxWidth: "50%",
       height: "100%",
       overflow: "hidden",
       alignItems: "center",
+
     },
 
     micOn: {
-      backgroundColor: theme.primary,
-      borderRadius: 20,
-    },
+      textAlign: 'center',
+      backgroundColor: theme.primary + '40',
+      borderWidth: 1,
+      borderColor: theme.primary,
+      borderRadius: 50,
+      aspectRatio: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      alignSelf: "center",
+    }
+
+
+
+
+
   });

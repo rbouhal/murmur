@@ -40,13 +40,6 @@ export async function sendDataToBackend() {
 export function connectToWebSocket() {
   if (!socket) {
     socket = io(EXPO_SERVER_URL);
-    socket.on("connect", () => console.log("Connected to WebSocket server"));
-    socket.on("disconnect", () =>
-      console.log("Disconnected from WebSocket server")
-    );
-    socket.on("connect_error", (err) =>
-      console.error("WebSocket connection error:", err)
-    );
   }
   startAudioStreaming();
 }
@@ -59,7 +52,6 @@ export function disconnectFromWebSocket() {
     stopAudioStreaming();
     socket.disconnect();
     socket = null;
-    console.log("Disconnected from WebSocket server");
   }
 }
 
@@ -100,12 +92,12 @@ export async function startAudioStreaming() {
   try {
     // 1) Request microphone permissions
     const { status } = await Audio.requestPermissionsAsync();
-    if (status !== "granted") {
-      console.log("Permission to access microphone denied");
+    if (status !== 'granted') {
+      console.log('Permission to access microphone denied');
       return;
     }
 
-    // 2) Configure audio settings
+    // 2) Configure audio settings properly
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
@@ -113,29 +105,45 @@ export async function startAudioStreaming() {
       playThroughEarpieceAndroid: false,
     });
 
-    // 3) Start recording
+    // 3) Start recording with explicit settings
     recording = new Audio.Recording();
-    await recording.prepareToRecordAsync(
-      Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
-    );
-    await recording.startAsync();
-    console.log("Recording started");
+    await recording.prepareToRecordAsync({
+      isMeteringEnabled: true,
+      android: {
+        extension: '.wav', // Ensure it's a playable format
+        outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_PCM_16BIT,
+        audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_PCM_16BIT,
+        sampleRate: 44100, // Match expected audio format
+        numberOfChannels: 1,
+        bitRate: 128000,
+      },
+      ios: {
+        extension: '.wav',
+        audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+        sampleRate: 44100,
+        numberOfChannels: 1,
+        bitRate: 128000,
+        linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false,
+      },
+    });
 
-    // 4) Set up an interval to chunk and send audio every 2 seconds (adjust as needed)
+    await recording.startAsync();
+    console.log('Recording started');
+
+    // 4) Stream recorded audio every 2 seconds
     chunkInterval = setInterval(async () => {
       try {
-        // Stop current recording
         await recording.stopAndUnloadAsync();
-
-        // Get the audio file URI
         const uri = recording.getURI();
         if (!uri) return;
 
-        // Fetch the file data as a Blob
+        // Fetch recorded data
         const response = await fetch(uri);
         const blob = await response.blob();
 
-        // Convert Blob to ArrayBuffer using FileReader
+        // Convert Blob to Uint8Array
         const arrayBuffer = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result);
@@ -143,24 +151,41 @@ export async function startAudioStreaming() {
           reader.readAsArrayBuffer(blob);
         });
 
-        // If the socket is connected, emit the chunk
         if (socket && socket.connected) {
-          // Convert arrayBuffer to a Uint8Array for sending over socket
-          socket.emit("audio-stream", new Uint8Array(arrayBuffer));
+          socket.emit('audio-stream', new Uint8Array(arrayBuffer));
         }
 
-        // Re-initialize recording immediately for the next chunk
+        // Re-initialize recording
         recording = new Audio.Recording();
-        await recording.prepareToRecordAsync(
-          Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
-        );
+        await recording.prepareToRecordAsync({
+          isMeteringEnabled: true,
+          android: {
+            extension: '.wav',
+            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_PCM_16BIT,
+            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_PCM_16BIT,
+            sampleRate: 16000, // Match the expected rate of the backend
+            numberOfChannels: 1,
+            bitRate: 256000, // Higher bitrate for better quality
+          },
+          ios: {
+            extension: '.wav',
+            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+            sampleRate: 44000, // Match the backend
+            numberOfChannels: 1,
+            bitRate: 256000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+        });
+
         await recording.startAsync();
       } catch (error) {
-        console.log("Error during audio chunk processing:", error);
+        console.log('Error during audio chunk processing:', error);
       }
     }, 2000);
   } catch (err) {
-    console.error("Could not start audio streaming:", err);
+    console.error('Could not start audio streaming:', err);
   }
 }
 
