@@ -12,7 +12,7 @@ import * as Contacts from "expo-contacts";
 import { useTheme } from "../context/ThemeContext";
 import { useFocusEffect } from "@react-navigation/native";
 import Contact from '../components/Contact';
-
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 export default function ContactsPage({ searchText }) {
   const { theme } = useTheme();
@@ -23,7 +23,8 @@ export default function ContactsPage({ searchText }) {
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
   const [tempAddedContact, setTempAddedContact] = useState(null);
-  
+  const [showOptions, setShowOptions] = useState(false);
+
 
 
   const styles = getStyles(theme); // Dynamically generate styles based on the theme
@@ -151,40 +152,121 @@ export default function ContactsPage({ searchText }) {
     filterContacts(searchText);
   }, [searchText]);
 
-  const renderContactCard = ({ item }) => (
-    <View
-      style={[
-        styles.card,
-        {
-          // THIS CHANGES THE COLORS OF A CONTACT CARD AFTER PRIORITY IS SELECTED
-          backgroundColor:
-            item.priority === "Red Flag"
-              ? 'rgb(252, 223, 93)'
-              : item.priority === "Emergency"
-                ? 'rgba(255, 28, 28, 0.56)'
-                : theme.cardBackground,
-        },
-      ]}
-    >
-      <Text style={[styles.cardText]}>
-        {item.name}  {item.phoneNumber}
-      </Text>
-      <TouchableOpacity
-        style={[
-          styles.toggleButton,
-          savedContacts[item.id]
-            // THESE ARE THE + AND - BUTTON COLORS
-            ? { backgroundColor: 'rgb(255, 16, 16)' } // used to be theme.secondary
-            : { backgroundColor: '#5dcf65' }, // used to be theme.primary
-        ]}
-        onPress={() => toggleContact(item)}
-      >
-        <Text style={styles.buttonText}>
-          {savedContacts[item.id] ? "-" : "+"}
+  const renderContactCard = ({ item }) => {
+    // Check if the contact is already saved
+    const isContactSaved = savedContacts[item.id];
+
+    return (
+      <View style={{ flexDirection: 'row', marginVertical: 5, marginHorizontal: 36 }}>
+        {/* Priority Icon (only show when not searching) */}
+        {!isSearching && isContactSaved && savedContacts[item.id].priority === "Red Flag" && (
+          <Ionicons
+            name="flag"
+            size={20}
+            style={{ color: theme.primary, marginLeft: 10 }}
+          />
+        )}
+        {!isSearching && isContactSaved && savedContacts[item.id].priority === "Emergency" && (
+          <Ionicons
+            name="warning"
+            size={20}
+            style={{ color: theme.secondary, marginLeft: 10 }}
+          />
+        )}
+
+        <Text style={[styles.cardText]}>
+          {item.name}
         </Text>
-      </TouchableOpacity>
-    </View>
-  );
+
+        {isSearching ? (
+          isContactSaved ? (
+            // Render the "Added" button if the contact is saved
+            <TouchableOpacity
+              style={styles.addedButton}
+              onPress={() => toggleContact(item)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons
+                  name="checkmark-outline"
+                  size={27}
+                  style={{ color: theme.cardBackground }}
+                />
+                <Text style={{ color: theme.cardBackground, fontSize: 16 }}>Added</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            // Render the "Add" button if the contact is not saved
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => toggleContact(item)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons
+                  name="add"
+                  size={27}
+                  style={styles.primaryTextColorIcon}
+                />
+                <Text style={{ color: theme.text, fontSize: 16 }}>Add</Text>
+              </View>
+            </TouchableOpacity>
+          )
+        ) : (
+          <>
+            {/* Show pencil and trash icons if options are visible */}
+            {showOptions && (
+              <>
+                {/* Pencil Icon (Edit Priority) */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedContact(item); // Set the selected contact
+                    setIsOverlayVisible(true); // Show the overlay
+                    setShowOptions(false); // Hide the options
+                  }}
+                  style={{ marginRight: 10 }}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={24}
+                    style={{ color: theme.text }}
+                  />
+                </TouchableOpacity>
+
+                {/* Trash Icon (Remove Contact) */}
+                <TouchableOpacity
+                  onPress={() => {
+                    const updatedContacts = { ...savedContacts };
+                    delete updatedContacts[item.id]; // Remove the contact
+                    saveContacts(updatedContacts); // Save the updated contacts
+                    setShowOptions(false); // Hide the options
+                  }}
+                >
+                  <Ionicons
+                    name="trash"
+                    size={24}
+                    style={{ color: theme.text }}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Ellipsis Icon (Toggle Options) - Hidden when showOptions is true */}
+            {!showOptions && (
+              <TouchableOpacity
+                onPress={() => setShowOptions(true)} // Toggle options visibility
+              >
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={24}
+                  style={{ color: theme.text }}
+                />
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </View>
+    );
+
+  }
 
   return (
     <View style={styles.container}>
@@ -214,22 +296,34 @@ export default function ContactsPage({ searchText }) {
           </Text>
           <View style={styles.overlayButtons}>
             <TouchableOpacity
-              // IF YOU CHANGE THIS BACKGROUND COLOR GO TO renderContactCard to update it properly
-              style={[styles.priorityButton, { backgroundColor: 'rgb(252, 223, 93)' }]}
+              style={styles.priorityButton}
               onPress={() => updatePriority("Red Flag")}
-            >
+            ><Ionicons
+                name="flag-outline"
+                size={22}
+                style={styles.primaryTextColorIcon}
+              />
               <Text style={styles.buttonText}>Red Flag</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              // IF YOU CHANGE THIS BACKGROUND COLOR GO TO renderContactCard to update it properly
-              style={[styles.priorityButton, { backgroundColor: 'rgba(255, 28, 28, 0.77)' }]}
+              style={styles.priorityButton}
               onPress={() => updatePriority("Emergency")}
             >
+              <Ionicons
+                name="warning-outline"
+                size={22}
+                style={styles.primaryTextColorIcon}
+              />
               <Text style={styles.buttonText}>Emergency</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity style={styles.overlayClose} onPress={handleCancel}>
-            <Text style={styles.buttonText}>Cancel</Text>
+            <Ionicons
+              name="close-outline"
+              size={22}
+              style={{ color: theme.cardBackground }}
+            />
+            <Text style={{ color: theme.cardBackground, size: 18 }}>Cancel</Text>
           </TouchableOpacity>
 
         </View>
@@ -271,18 +365,15 @@ const getStyles = (theme) =>
     cardText: {
       fontSize: 16,
       flex: 1,
-      marginRight: 10,
-      color: theme.primary,
+      color: theme.text,
     },
     toggleButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      borderRadius: 5,
       alignItems: "center",
       justifyContent: "center",
     },
     buttonText: {
-      color: "#fff",
+      color: theme.text,
       fontSize: 18,
       fontWeight: "bold",
     },
@@ -292,7 +383,7 @@ const getStyles = (theme) =>
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: `${theme.background}E6`,
+      backgroundColor: theme.background + 'F2',
       justifyContent: "center",
       alignItems: "center",
     },
@@ -309,16 +400,59 @@ const getStyles = (theme) =>
     },
     priorityButton: {
       padding: 15,
-      borderRadius: 10,
+      borderRadius: 5,
+      borderColor: theme.primary,
+      borderWidth: 1,
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
       alignItems: "center",
       justifyContent: "center",
       flex: 1,
       marginHorizontal: 5,
+      backgroundColor: theme.cardBackground
     },
     overlayClose: {
-      marginTop: 10,
-      padding: 10,
-      borderRadius: 10,
-      backgroundColor: theme.secondary,
+      flexDirection: 'row',
+      alignItems: "center",
+      alignSelf: 'flex-end',
+      marginHorizontal: 50,
+      paddingVertical: 5,
+      paddingHorizontal: 15,
+      borderRadius: 50,
+      backgroundColor: theme.text,
+      // iOS Shadow
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
     },
+    primaryTextColorIcon: {
+      color: theme.text,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    addButton: {
+      backgroundColor: theme.cardBackground,
+      borderRadius: 5,
+      width: 70,
+      // iOS Shadow
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+
+    },
+    addedButton: {
+      backgroundColor: theme.text,
+      borderRadius: 5,
+      width: 85,
+      // iOS Shadow
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    }
   });

@@ -7,14 +7,15 @@ import {
   Alert,
   Modal,
   TouchableOpacity,
-  FlatList,
   ScrollView,
 } from "react-native";
 import * as Location from "expo-location";
 import { useTheme } from "../context/ThemeContext";
 import CustomCard from "../components/CustomCard";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { sendAudioToAzure } from "../services/network";
+import {
+  sendAudioToAzure,
+} from "../services/network";
 import { Audio } from "expo-av";
 
 const recordingOptions = {
@@ -232,7 +233,7 @@ export default function Home() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isTracking]);
-  
+
   return (
     <ScrollView
       style={styles.container}
@@ -433,6 +434,8 @@ export default function Home() {
               </View>
             )}
           </View>
+
+          {/* Emergency Box */}
           <View style={styles.borderBox}>
             <Ionicons
               name="warning-outline"
@@ -488,20 +491,6 @@ export default function Home() {
               </View>
             )}
           </View>
-        </View>
-            <View style={styles.emptyBox}>
-              <Text style={{ color: theme.text }}>No Voice Profile</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.padding}>
-          <FlatList
-            data={listenData}
-            numColumns={2}
-            renderItem={({ item }) => <Listen listen={item} />}
-            keyExtractor={(listen) => listen.id}
-            scrollEnabled={false}
-          />
         </View>
       </CustomCard>
 
