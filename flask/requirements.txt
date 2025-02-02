@@ -1,0 +1,5 @@
+vosk
+scipy
+Flask
+python-dotenv
+numpy
