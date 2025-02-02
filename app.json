@@ -18,13 +18,19 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to show it on the screen.",
         "NSMicrophoneUsageDescription": "We need access to your microphone to stream audio.",
-        "UIBackgroundModes": ["voip", "audio"]
+        "UIBackgroundModes": [
+          "voip",
+          "audio"
+        ]
       },
       "appleTeamId": "6H2BCF5U3L"
     },
     "android": {
       "adaptiveIcon": {
-        "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+        "permissions": [
+          "ACCESS_FINE_LOCATION",
+          "ACCESS_COARSE_LOCATION"
+        ],
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#d2b7e5"
       },
@@ -44,6 +50,9 @@
       }
     },
     "owner": "hokiecoders",
-    "plugins": ["expo-font"]
+    "plugins": [
+      "expo-font",
+      "expo-sqlite"
+    ]
   }
 }

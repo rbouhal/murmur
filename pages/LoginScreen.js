@@ -1,17 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
-import { useTheme } from '../context/ThemeContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as AppleAuthentication from 'expo-apple-authentication';
+import React, { useState, useEffect, useRef } from "react";
+import { View, StyleSheet, Animated } from "react-native";
+import { useTheme } from "../context/ThemeContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as AppleAuthentication from "expo-apple-authentication";
+import { useDatabase } from "../services/database";
+import { useAuth } from "../providers/AuthProvider";
 
 export default function LoginScreen({ onLoginSuccess }) {
+  const { insertUser } = useDatabase();
+  const { setUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [isDarkMode] = React.useState(theme.background === '#0B0812');
+  const [isDarkMode] = React.useState(theme.background === "#0B0812");
   const styles = getStyles(theme);
   const fadeAnim = useRef(new Animated.Value(0)).current; // Initial opacity: 0
 
   const blurhash =
-    '|rF?hV%2WCj[ayj[a|j[az_NaeWBj@ayfRayfQfQM{M|azj[azf6fQfQfQIpWXofj[ayj[j[fQayWCoeoeaya}j[ayfQa{oLj?j[WVj[ayayj[fQoff7azayayj[fQj[ayayj[ayfjj[j[ayjuayj[';
+    "|rF?hV%2WCj[ayj[a|j[az_NaeWBj@ayfRayfQfQM{M|azj[azf6fQfQfQIpWXofj[ayj[j[fQayWCoeoeaya}j[ayfQa{oLj?j[WVj[ayayj[fQoff7azayayj[fQj[ayayj[ayfjj[j[ayjuayj[";
 
   useEffect(() => {
     // Trigger fade-in animation when the component mounts
@@ -31,25 +35,33 @@ export default function LoginScreen({ onLoginSuccess }) {
         ],
       });
 
-      let displayName = 'User'; // Default name
-
+      let displayName = "User"; // Default name
+      const userId = credential.user;
       // Check if fullName is available (first login only)
-      if (credential.fullName && (credential.fullName.givenName || credential.fullName.familyName)) {
-        displayName = `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim();
+      if (
+        credential.fullName &&
+        (credential.fullName.givenName || credential.fullName.familyName)
+      ) {
+        displayName = `${credential.fullName.givenName || ""} ${
+          credential.fullName.familyName || ""
+        }`.trim();
       } else {
         // If fullName is missing, check if it's already stored in AsyncStorage
-        const storedName = await AsyncStorage.getItem('userName');
+        const storedName = await AsyncStorage.getItem("userName");
         if (storedName) {
           displayName = storedName; // Use the previously stored name
         }
       }
 
-      await AsyncStorage.setItem('isLoggedIn', 'true');
-      await AsyncStorage.setItem('userName', displayName);
+      await insertUser(userId, displayName);
+      await AsyncStorage.setItem("userId", userId);
+      await AsyncStorage.setItem("isLoggedIn", "true");
+      await AsyncStorage.setItem("userName", displayName);
+
+      setUser({ userId, displayName });
 
       onLoginSuccess();
-    } catch (error) {
-    }
+    } catch (error) {}
   }
 
   return (
@@ -57,7 +69,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       <View style={styles.innerContainer}>
         {/* Animated Image */}
         <Animated.Image
-          source={require('../assets/icon.png')}
+          source={require("../assets/icon.png")}
           style={[styles.image, { opacity: fadeAnim }]} // Bind opacity to fadeAnim
         />
       </View>
@@ -65,7 +77,11 @@ export default function LoginScreen({ onLoginSuccess }) {
         {/* Sign-in Button */}
         <AppleAuthentication.AppleAuthenticationButton
           buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={isDarkMode ? AppleAuthentication.AppleAuthenticationButtonStyle.BLACK : AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+          buttonStyle={
+            isDarkMode
+              ? AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+              : AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+          }
           cornerRadius={5}
           style={styles.button}
           onPress={handleAppleSignIn}
@@ -79,13 +95,13 @@ const getStyles = (theme) =>
   StyleSheet.create({
     outerContainer: {
       flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
+      justifyContent: "center",
+      alignItems: "center",
       backgroundColor: theme.background,
     },
     innerContainer: {
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems: "center",
+      justifyContent: "center",
       backgroundColor: theme.backgroundColor,
       shadowColor: theme.primary,
       shadowOffset: { width: 2, height: 2 },
@@ -104,7 +120,7 @@ const getStyles = (theme) =>
       height: 50,
     },
     appleContainer: {
-      position: 'absolute',
+      position: "absolute",
       bottom: 150,
     },
   });

@@ -8,7 +8,6 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  AppState,
 } from "react-native";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system";
@@ -22,6 +21,8 @@ import {
   registerBackgroundTask,
   unregisterBackgroundTask,
 } from "../services/backgroundTaskManager";
+import { useDatabase } from "../services/database";
+import { useAuth } from "../providers/AuthProvider";
 
 const recordingOptions = {
   isMeteringEnabled: false,
@@ -71,6 +72,9 @@ export default function Home() {
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
+  const { fetchRecordings, insertRecording, deleteRecording } = useDatabase();
+  const { user } = useAuth();
+
   const canEnableListening = Boolean(
     redFlagSafeWord.trim() &&
       redFlagRecording &&
@@ -83,7 +87,75 @@ export default function Home() {
    */
   useEffect(() => {
     const loadPersistedData = async () => {
+      if (!user?.userId) {
+        return;
+      }
+
       try {
+        console.log(`Fetching recordings for user: ${user.userId}`);
+        const storedRecordings = await fetchRecordings(user.userId);
+        console.log("Stored recordings:", storedRecordings);
+
+        if (storedRecordings.length) {
+          const storedRedFlagSafeWord = await AsyncStorage.getItem(
+            "redFlagSafeWord"
+          );
+          const storedEmergencySafeWord = await AsyncStorage.getItem(
+            "emergencySafeWord"
+          );
+          let redFlag = null;
+          let emergency = null;
+
+          for (const rec of storedRecordings) {
+            const fileInfo = await FileSystem.getInfoAsync(rec.fileUri);
+            if (!fileInfo.exists) {
+              console.warn(`File does not exist: ${rec.fileUri}`);
+              continue;
+            }
+
+            // Match filenames to stored safe words
+            if (rec.filename.includes(storedRedFlagSafeWord)) {
+              redFlag = rec;
+            } else if (rec.filename.includes(storedEmergencySafeWord)) {
+              emergency = rec;
+            }
+          }
+
+          if (redFlag) {
+            setRedFlagRecording(redFlag.fileUri);
+            setRedFlagSafeWord(redFlag.filename.replace(".wav", ""));
+            console.log("Restored Red Flag recording:", redFlag.fileUri);
+          }
+
+          if (emergency) {
+            setEmergencyRecording(emergency.fileUri);
+            setEmergencySafeWord(emergency.filename.replace(".wav", ""));
+            console.log("Restored Emergency recording:", emergency.fileUri);
+          }
+
+          // if (redFlag) {
+          //   const fileInfo = await FileSystem.getInfoAsync(redFlag.fileUri);
+          //   if (fileInfo.exists) {
+          //     setRedFlagRecording(redFlag.fileUri);
+          //     setRedFlagSafeWord(redFlag.filename.replace(".wav", ""));
+          //     console.log("Red Flag recording restored:", redFlag.fileUri);
+          //   } else {
+          //     console.warn("Red Flag file not found on device.");
+          //   }
+          // }
+
+          // if (emergency) {
+          //   const fileInfo = await FileSystem.getInfoAsync(emergency.fileUri);
+          //   if (fileInfo.exists) {
+          //     setEmergencyRecording(emergency.fileUri);
+          //     setEmergencySafeWord(emergency.filename.replace(".wav", ""));
+          //     console.log("Emergency recording restored:", emergency.fileUri);
+          //   } else {
+          //     console.warn("Emergency file not found on device.");
+          //   }
+          // }
+        }
+
         const storedRedFlagSafeWord = await AsyncStorage.getItem(
           "redFlagSafeWord"
         );
@@ -94,39 +166,11 @@ export default function Home() {
 
         if (storedRedFlagSafeWord) {
           setRedFlagSafeWord(storedRedFlagSafeWord);
+          console.log("Restored Red Flag safe word:", storedRedFlagSafeWord);
         }
         if (storedEmergencySafeWord) {
           setEmergencySafeWord(storedEmergencySafeWord);
-        }
-
-        const storedRedFlagRecording = await AsyncStorage.getItem(
-          "redFlagRecording"
-        );
-        if (storedRedFlagRecording) {
-          const fileInfo = await FileSystem.getInfoAsync(
-            storedRedFlagRecording
-          );
-          console.log("RedFlag file exists?", fileInfo.exists, fileInfo);
-          if (fileInfo.exists) {
-            setRedFlagRecording(storedRedFlagRecording);
-          } else {
-            console.warn("RedFlag recording not found on disk");
-          }
-        }
-
-        const storedEmergencyRecording = await AsyncStorage.getItem(
-          "emergencyRecording"
-        );
-        if (storedEmergencyRecording) {
-          const fileInfo = await FileSystem.getInfoAsync(
-            storedEmergencyRecording
-          );
-          console.log("Emergency file exists?", fileInfo.exists, fileInfo);
-          if (fileInfo.exists) {
-            setEmergencyRecording(storedEmergencyRecording);
-          } else {
-            console.warn("Emergency recording not found on disk");
-          }
+          console.log("Restored Emergency safe word:", storedEmergencySafeWord);
         }
       } catch (error) {
         console.error("Error loading persisted data:", error);
@@ -134,7 +178,7 @@ export default function Home() {
     };
 
     loadPersistedData();
-  }, []);
+  }, [user]);
 
   /**
    * Enables location tracking
@@ -361,18 +405,27 @@ export default function Home() {
       const cleanedText = recognizedText.replace(/[!.,]/g, "");
       console.log("Cleaned text", cleanedText);
 
+      if (!user || !user?.userId) {
+        console.error("User not found, cannot save recording!");
+        Alert.alert("Error", "User data not loaded. Please restart the app.");
+        return;
+      }
+
       if (cleanedText !== "") {
         if (type === "redFlag") {
           setRedFlagRecording(uri);
           setRedFlagSafeWord(cleanedText);
-          await AsyncStorage.setItem("redFlagRecording", uri);
           await AsyncStorage.setItem("redFlagSafeWord", cleanedText);
         } else if (type === "emergency") {
           setEmergencyRecording(uri);
           setEmergencySafeWord(cleanedText);
-          await AsyncStorage.setItem("emergencyRecording", uri);
           await AsyncStorage.setItem("emergencySafeWord", cleanedText);
         }
+        await insertRecording(user.userId, {
+          filename: `${cleanedText}.wav`,
+          fileUri: uri,
+        });
+        console.log(`${type} recording saved to database.`);
       }
     } catch (err) {
       console.error(`Error sending ${type} recording to Azure:`, err);
@@ -503,81 +556,77 @@ export default function Home() {
       setIsListening(false);
     }
 
-    if (type === "redFlag") {
-      // If the red flag recording is currently playing, stop it first.
-      if (playingType === "redFlag" && currentSound) {
+    let recordingToDelete =
+      type === "redFlag" ? redFlagRecording : emergencyRecording;
+
+    if (!recordingToDelete) {
+      console.warn(`No recording found for ${type}.`);
+      return;
+    }
+
+    try {
+      // Ensure playback is stopped before deleting
+      if (playingType === type && currentSound) {
         try {
           await currentSound.stopAsync();
           await currentSound.unloadAsync();
           setCurrentSound(null);
           setPlayingType(null);
-          console.log("Stopped red flag playback before deletion.");
+          console.log(`Stopped ${type} playback before deletion.`);
         } catch (error) {
           console.error(
-            "Error stopping red flag playback before deletion:",
+            `Error stopping ${type} playback before deletion:`,
             error
           );
         }
       }
-      // Delete the recording file if it exists.
-      if (redFlagRecording) {
-        try {
-          await FileSystem.deleteAsync(redFlagRecording);
-          console.log("Red flag recording deleted.");
-        } catch (error) {
-          console.error("Error deleting red flag recording:", error);
-        }
+
+      // Fetch the corresponding recording from the database
+      const storedRecordings = await fetchRecordings(user.userId);
+      const targetRecording = storedRecordings.find(
+        (rec) => rec.fileUri === recordingToDelete
+      );
+
+      // Delete from SQLite if it exists
+      if (targetRecording) {
+        await deleteRecording(targetRecording.id);
+        console.log(`${type} recording deleted from SQLite.`);
       }
-      // Remove the safe word and recording URI from AsyncStorage.
+
+      // Delete the recording file from local storage
       try {
-        await AsyncStorage.removeItem("redFlagRecording");
-        await AsyncStorage.removeItem("redFlagSafeWord");
-        console.log("Red flag safe word data removed from AsyncStorage.");
-      } catch (error) {
-        console.error("Error removing red flag data from AsyncStorage:", error);
-      }
-      // Update component state.
-      setRedFlagRecording(null);
-      setRedFlagSafeWord("");
-    } else if (type === "emergency") {
-      // If the emergency recording is currently playing, stop it first.
-      if (playingType === "emergency" && currentSound) {
-        try {
-          await currentSound.stopAsync();
-          await currentSound.unloadAsync();
-          setCurrentSound(null);
-          setPlayingType(null);
-          console.log("Stopped emergency playback before deletion.");
-        } catch (error) {
-          console.error(
-            "Error stopping emergency playback before deletion:",
-            error
-          );
-        }
-      }
-      // Delete the recording file if it exists.
-      if (emergencyRecording) {
-        try {
-          await FileSystem.deleteAsync(emergencyRecording);
-          console.log("Emergency recording deleted.");
-        } catch (error) {
-          console.error("Error deleting emergency recording:", error);
-        }
-      }
-      // Remove the safe word and recording URI from AsyncStorage.
-      try {
-        await AsyncStorage.removeItem("emergencyRecording");
-        await AsyncStorage.removeItem("emergencySafeWord");
-        console.log("Emergency safe word data removed from AsyncStorage.");
+        await FileSystem.deleteAsync(recordingToDelete);
+        console.log(`${type} recording deleted from file system.`);
       } catch (error) {
         console.error(
-          "Error removing emergency data from AsyncStorage:",
+          `Error deleting ${type} recording from file system:`,
           error
         );
       }
-      // Update component state.
-      setEmergencyRecording(null);
-      setEmergencySafeWord("");
+
+      // Remove from AsyncStorage
+      try {
+        await AsyncStorage.removeItem(
+          type === "redFlag" ? "redFlagSafeWord" : "emergencySafeWord"
+        );
+        console.log(`${type} safe word removed from AsyncStorage.`);
+      } catch (error) {
+        console.error(
+          `Error removing ${type} safe word from AsyncStorage:`,
+          error
+        );
+      }
+
+      // Update the state
+      if (type === "redFlag") {
+        setRedFlagRecording(null);
+        setRedFlagSafeWord("");
+      } else {
+        setEmergencyRecording(null);
+        setEmergencySafeWord("");
+      }
+    } catch (error) {
+      console.error(`Error removing ${type} recording:`, error);
     }
   }
 
