@@ -17,18 +17,21 @@
       "bundleIdentifier": "com.rbouhal.murmur",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to show it on the screen.",
-        "NSMicrophoneUsageDescription": "We need access to your microphone to stream audio."
+        "NSMicrophoneUsageDescription": "We need access to your microphone to stream audio.",
+        "UIBackgroundModes": ["voip", "audio"]
       },
-      "appleTeamId": "GZR2XN3LP2"
+      "appleTeamId": "6H2BCF5U3L"
     },
     "android": {
       "adaptiveIcon": {
-        "permissions": [
-          "ACCESS_FINE_LOCATION",
-          "ACCESS_COARSE_LOCATION"
-        ],
+        "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#d2b7e5"
+      },
+      "foregroundService": {
+        "notificationTitle": "Active Listening",
+        "notificationBody": "The app is actively listening for safe words in the background",
+        "notificationColor": "#ffffff"
       },
       "package": "com.rbouhal.murmur"
     },
@@ -41,8 +44,6 @@
       }
     },
     "owner": "hokiecoders",
-    "plugins": [
-      "expo-font"
-    ]
+    "plugins": ["expo-font"]
   }
 }
