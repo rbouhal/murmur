@@ -8,18 +8,20 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
+  AppState,
 } from "react-native";
 import * as Location from "expo-location";
+import * as FileSystem from "expo-file-system";
 import { useTheme } from "../context/ThemeContext";
 import CustomCard from "../components/CustomCard";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import {
-  sendAudioToAzure,
-  startAzureListening,
-  stopAzureListening,
-} from "../services/network";
+import { sendAudioToAzure } from "../services/network";
 import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  registerBackgroundTask,
+  unregisterBackgroundTask,
+} from "../services/backgroundTaskManager";
 
 const recordingOptions = {
   isMeteringEnabled: false,
@@ -69,36 +71,62 @@ export default function Home() {
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
+  const canEnableListening = Boolean(
+    redFlagSafeWord.trim() &&
+      redFlagRecording &&
+      emergencySafeWord.trim() &&
+      emergencyRecording
+  );
+
   /**
    * Stores recordings/safe words
    */
   useEffect(() => {
     const loadPersistedData = async () => {
       try {
-        const storedRedFlagRecording = await AsyncStorage.getItem(
-          "redFlagRecording"
-        );
         const storedRedFlagSafeWord = await AsyncStorage.getItem(
           "redFlagSafeWord"
         );
-        const storedEmergencyRecording = await AsyncStorage.getItem(
-          "emergencyRecording"
-        );
+
         const storedEmergencySafeWord = await AsyncStorage.getItem(
           "emergencySafeWord"
         );
 
-        if (storedRedFlagRecording) {
-          setRedFlagRecording(storedRedFlagRecording);
-        }
         if (storedRedFlagSafeWord) {
           setRedFlagSafeWord(storedRedFlagSafeWord);
         }
-        if (storedEmergencyRecording) {
-          setEmergencyRecording(storedEmergencyRecording);
-        }
         if (storedEmergencySafeWord) {
           setEmergencySafeWord(storedEmergencySafeWord);
+        }
+
+        const storedRedFlagRecording = await AsyncStorage.getItem(
+          "redFlagRecording"
+        );
+        if (storedRedFlagRecording) {
+          const fileInfo = await FileSystem.getInfoAsync(
+            storedRedFlagRecording
+          );
+          console.log("RedFlag file exists?", fileInfo.exists, fileInfo);
+          if (fileInfo.exists) {
+            setRedFlagRecording(storedRedFlagRecording);
+          } else {
+            console.warn("RedFlag recording not found on disk");
+          }
+        }
+
+        const storedEmergencyRecording = await AsyncStorage.getItem(
+          "emergencyRecording"
+        );
+        if (storedEmergencyRecording) {
+          const fileInfo = await FileSystem.getInfoAsync(
+            storedEmergencyRecording
+          );
+          console.log("Emergency file exists?", fileInfo.exists, fileInfo);
+          if (fileInfo.exists) {
+            setEmergencyRecording(storedEmergencyRecording);
+          } else {
+            console.warn("Emergency recording not found on disk");
+          }
         }
       } catch (error) {
         console.error("Error loading persisted data:", error);
@@ -158,10 +186,12 @@ export default function Home() {
     let cancelActiveListening = false;
 
     const startActiveListeningLoop = async () => {
-      while (isListening && !cancelActiveListening) {
-        console.log("Starting active listening segment...");
-        await activeListener();
-        console.log("Active listening segment finished.");
+      if (redFlagSafeWord && emergencySafeWord) {
+        while (isListening && !cancelActiveListening) {
+          console.log("Starting foreground active listening segment...");
+          await activeListenerForeground();
+          console.log("Foreground active listening segment finished.");
+        }
       }
     };
 
@@ -173,9 +203,28 @@ export default function Home() {
     };
   }, [isListening, redFlagSafeWord, emergencySafeWord]);
 
-  // Handle switch toggle
+  // Toggles active listening
   const toggleListening = async (value) => {
+    if (value && !canEnableListening) {
+      Alert.alert(
+        "Safe Words Required",
+        "Please record both your Red Flag and Emergency safe words before enabling active listening."
+      );
+      return; // Do not enable listening.
+    }
+    if (value && recording) {
+      console.log(
+        "Listening toggle turned off while a recording is progress; discarding recording."
+      );
+      await discardRecording();
+    }
+
     setIsListening(value);
+    if (value) {
+      await registerBackgroundTask();
+    } else {
+      await unregisterBackgroundTask();
+    }
     console.log(
       value ? "Active listening enabled" : "Active listening disabled"
     );
@@ -197,7 +246,7 @@ export default function Home() {
      */
   }
 
-  async function activeListener() {
+  async function activeListenerForeground() {
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -207,14 +256,14 @@ export default function Home() {
       const { recording: segmentRecording } = await Audio.Recording.createAsync(
         recordingOptions
       );
-      console.log("Active listening segment recording started");
+      console.log("Foreground active listening segment recording started");
 
-      await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait for 10 seconds
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait for 10 seconds
 
       await segmentRecording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
       const uri = segmentRecording.getURI();
-      console.log("Active listening segment recorded at:", uri);
+      console.log("Foreground active listening segment recorded at:", uri);
 
       if (uri) {
         const response = await sendAudioToAzure(uri);
@@ -223,7 +272,10 @@ export default function Home() {
           .replace(/[!.,]/g, "")
           .trim()
           .toLowerCase();
-        console.log("Active listening recognized text:", cleanedText);
+        console.log(
+          "Foreground active listening recognized text:",
+          cleanedText
+        );
 
         // Recognizes safe words in audio segment. If both words are said in the same segment; Emergency word takes precedence
         if (
@@ -239,11 +291,21 @@ export default function Home() {
         }
       }
     } catch (err) {
-      console.error("Error during active listening segment:", err);
+      console.error("Error during foreground active listening segment:", err);
     }
   }
 
+  /**
+   * Starts recording for safe word @param {"redFlag", "emergency"} type
+   */
   async function startRecording(type) {
+    if (isListening) {
+      console.log(
+        `Listening is active. Disabling listening mode to start ${type} recording`
+      );
+      await toggleListening(false);
+    }
+
     try {
       if (recording && activeRecordingType) {
         console.log(`Stopping previous recording for ${activeRecordingType}`);
@@ -271,6 +333,9 @@ export default function Home() {
     }
   }
 
+  /**
+   * Stops recording safe word of @param {"redFlag", "emergency"} type
+   */
   async function stopRecording(type) {
     if (!recording) {
       console.warn(`No active recording to stop for ${type}`);
@@ -284,7 +349,7 @@ export default function Home() {
     });
 
     const uri = recording.getURI();
-    console.log(`${type} recording stored at:`, uri);
+    console.log(`${type} recording stored at temporary URI:`, uri);
 
     setRecording(null);
     setActiveRecordingType(null);
@@ -293,8 +358,8 @@ export default function Home() {
       const response = await sendAudioToAzure(uri);
       console.log("Response: ", response);
       const recognizedText = response?.DisplayText || "";
-      cleanedText = recognizedText.replace(/[!.,]/g, "");
-      console.log("Stripped text", cleanedText);
+      const cleanedText = recognizedText.replace(/[!.,]/g, "");
+      console.log("Cleaned text", cleanedText);
 
       if (cleanedText !== "") {
         if (type === "redFlag") {
@@ -326,13 +391,22 @@ export default function Home() {
       }
       console.log("Red Flag recording URI:", redFlagRecording);
 
-      if (playingType === "redFlag") {
-        if (currentSound) {
-          await currentSound.stopAsync();
-          await currentSound.unloadAsync();
-          setCurrentSound(null);
-          setPlayingType(null);
-        }
+      // Verify that the file actually exists on the filesystem.
+      const fileInfo = await FileSystem.getInfoAsync(redFlagRecording);
+      if (!fileInfo.exists) {
+        Alert.alert(
+          "Recording Not Found",
+          "The red flag recording file could not be found on disk. Please re-record."
+        );
+        return;
+      }
+      console.log("Red Flag recording URI:", fileInfo.uri);
+
+      if (playingType === "redFlag" && currentSound) {
+        await currentSound.stopAsync();
+        await currentSound.unloadAsync();
+        setCurrentSound(null);
+        setPlayingType(null);
       } else {
         if (currentSound) {
           await currentSound.stopAsync();
@@ -345,7 +419,7 @@ export default function Home() {
         });
 
         const { sound } = await Audio.Sound.createAsync({
-          uri: redFlagRecording,
+          uri: fileInfo.uri,
         });
 
         sound.setOnPlaybackStatusUpdate((status) => {
@@ -375,15 +449,22 @@ export default function Home() {
         );
         return;
       }
+      // Verify that the file exists on the filesystem.
+      const fileInfo = await FileSystem.getInfoAsync(emergencyRecording);
+      if (!fileInfo.exists) {
+        Alert.alert(
+          "Recording Not Found",
+          "The emergency recording file could not be found on disk. Please re-record."
+        );
+        return;
+      }
       console.log("Emergency recording URI:", emergencyRecording);
 
-      if (playingType === "emergency") {
-        if (currentSound) {
-          await currentSound.stopAsync();
-          await currentSound.unloadAsync();
-          setCurrentSound(null);
-          setPlayingType(null);
-        }
+      if (playingType === "emergency" && currentSound) {
+        await currentSound.stopAsync();
+        await currentSound.unloadAsync();
+        setCurrentSound(null);
+        setPlayingType(null);
       } else {
         if (currentSound) {
           await currentSound.stopAsync();
@@ -397,7 +478,7 @@ export default function Home() {
         });
 
         const { sound } = await Audio.Sound.createAsync({
-          uri: emergencyRecording,
+          uri: fileInfo.uri,
         });
 
         sound.setOnPlaybackStatusUpdate((status) => {
@@ -414,6 +495,106 @@ export default function Home() {
       }
     } catch (error) {
       console.log("Error playing Emergency recording:", error);
+    }
+  }
+
+  async function removeSafeWord(type) {
+    if (isListening) {
+      setIsListening(false);
+    }
+
+    if (type === "redFlag") {
+      // If the red flag recording is currently playing, stop it first.
+      if (playingType === "redFlag" && currentSound) {
+        try {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+          console.log("Stopped red flag playback before deletion.");
+        } catch (error) {
+          console.error(
+            "Error stopping red flag playback before deletion:",
+            error
+          );
+        }
+      }
+      // Delete the recording file if it exists.
+      if (redFlagRecording) {
+        try {
+          await FileSystem.deleteAsync(redFlagRecording);
+          console.log("Red flag recording deleted.");
+        } catch (error) {
+          console.error("Error deleting red flag recording:", error);
+        }
+      }
+      // Remove the safe word and recording URI from AsyncStorage.
+      try {
+        await AsyncStorage.removeItem("redFlagRecording");
+        await AsyncStorage.removeItem("redFlagSafeWord");
+        console.log("Red flag safe word data removed from AsyncStorage.");
+      } catch (error) {
+        console.error("Error removing red flag data from AsyncStorage:", error);
+      }
+      // Update component state.
+      setRedFlagRecording(null);
+      setRedFlagSafeWord("");
+    } else if (type === "emergency") {
+      // If the emergency recording is currently playing, stop it first.
+      if (playingType === "emergency" && currentSound) {
+        try {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+          console.log("Stopped emergency playback before deletion.");
+        } catch (error) {
+          console.error(
+            "Error stopping emergency playback before deletion:",
+            error
+          );
+        }
+      }
+      // Delete the recording file if it exists.
+      if (emergencyRecording) {
+        try {
+          await FileSystem.deleteAsync(emergencyRecording);
+          console.log("Emergency recording deleted.");
+        } catch (error) {
+          console.error("Error deleting emergency recording:", error);
+        }
+      }
+      // Remove the safe word and recording URI from AsyncStorage.
+      try {
+        await AsyncStorage.removeItem("emergencyRecording");
+        await AsyncStorage.removeItem("emergencySafeWord");
+        console.log("Emergency safe word data removed from AsyncStorage.");
+      } catch (error) {
+        console.error(
+          "Error removing emergency data from AsyncStorage:",
+          error
+        );
+      }
+      // Update component state.
+      setEmergencyRecording(null);
+      setEmergencySafeWord("");
+    }
+  }
+
+  // Helper function to discard an in‐progress safe word recording
+  async function discardRecording() {
+    if (!recording) return;
+    try {
+      // Stop and unload the recording without further processing.
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      console.log("Recording discarded.");
+    } catch (error) {
+      console.error("Error discarding recording:", error);
+    } finally {
+      // Reset state so no safe word recording is in progress.
+      setRecording(null);
+      setActiveRecordingType(null);
     }
   }
 
@@ -480,6 +661,7 @@ export default function Home() {
           <Switch
             value={isListening}
             onValueChange={toggleListening}
+            disabled={!canEnableListening}
             thumbColor={theme.text}
             trackColor={{ false: theme.secondary, true: theme.primary }}
           />
@@ -578,11 +760,28 @@ export default function Home() {
         <View style={{ flexDirection: "row" }}>
           {/* Red Flag Box */}
           <View style={styles.borderBox}>
-            <Ionicons
-              name="flag-outline"
-              size={22}
-              style={styles.primaryTextColorIcon}
-            />
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <Ionicons
+                name="flag-outline"
+                size={22}
+                style={styles.primaryTextColorIcon}
+              />
+              {redFlagSafeWord && redFlagRecording && (
+                <TouchableOpacity
+                  onPress={() => {
+                    removeSafeWord("redFlag");
+                  }}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={22}
+                    style={styles.primaryTextColorIcon}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
             <Text style={[styles.cardH1, { color: theme.text }]}>Red Flag</Text>
 
             {redFlagSafeWord && (
@@ -627,11 +826,29 @@ export default function Home() {
 
           {/* Emergency Box */}
           <View style={styles.borderBox}>
-            <Ionicons
-              name="warning-outline"
-              size={22}
-              style={styles.primaryTextColorIcon}
-            />
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <Ionicons
+                name="warning-outline"
+                size={22}
+                style={styles.primaryTextColorIcon}
+              />
+              {emergencySafeWord && emergencyRecording && (
+                <TouchableOpacity
+                  onPress={() => {
+                    removeSafeWord("emergency");
+                  }}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={22}
+                    style={styles.primaryTextColorIcon}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
             <Text style={[styles.cardH1, { color: theme.text }]}>
               Emergency
             </Text>
