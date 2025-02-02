@@ -11,7 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Contacts from "expo-contacts";
 import { useTheme } from "../context/ThemeContext";
 import { useFocusEffect } from "@react-navigation/native";
-import Contact from '../components/Contact';
+import Contact from "../components/Contact";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 export default function ContactsPage({ searchText }) {
@@ -25,8 +25,6 @@ export default function ContactsPage({ searchText }) {
   const [tempAddedContact, setTempAddedContact] = useState(null);
   const [showOptions, setShowOptions] = useState(false);
 
-
-
   const styles = getStyles(theme); // Dynamically generate styles based on the theme
 
   // Fetch saved contacts from AsyncStorage
@@ -36,6 +34,7 @@ export default function ContactsPage({ searchText }) {
       if (data) {
         setSavedContacts(JSON.parse(data));
       }
+      return data;
     } catch (error) {
       console.error("Error fetching saved contacts:", error);
     }
@@ -113,8 +112,6 @@ export default function ContactsPage({ searchText }) {
     setIsOverlayVisible(false);
   };
 
-
-
   const updatePriority = (priority) => {
     if (selectedContact) {
       const updatedContacts = { ...savedContacts };
@@ -157,26 +154,34 @@ export default function ContactsPage({ searchText }) {
     const isContactSaved = savedContacts[item.id];
 
     return (
-      <View style={{ flexDirection: 'row', marginVertical: 5, marginHorizontal: 36 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          marginVertical: 5,
+          marginHorizontal: 36,
+        }}
+      >
         {/* Priority Icon (only show when not searching) */}
-        {!isSearching && isContactSaved && savedContacts[item.id].priority === "Red Flag" && (
-          <Ionicons
-            name="flag"
-            size={20}
-            style={{ color: theme.text, marginHorizontal: 10 }}
-          />
-        )}
-        {!isSearching && isContactSaved && savedContacts[item.id].priority === "Emergency" && (
-          <Ionicons
-            name="warning"
-            size={20}
-            style={{ color: theme.text, marginHorizontal: 10 }}
-          />
-        )}
+        {!isSearching &&
+          isContactSaved &&
+          savedContacts[item.id].priority === "Red Flag" && (
+            <Ionicons
+              name="flag"
+              size={20}
+              style={{ color: theme.text, marginHorizontal: 10 }}
+            />
+          )}
+        {!isSearching &&
+          isContactSaved &&
+          savedContacts[item.id].priority === "Emergency" && (
+            <Ionicons
+              name="warning"
+              size={20}
+              style={{ color: theme.text, marginHorizontal: 10 }}
+            />
+          )}
 
-        <Text style={[styles.cardText]}>
-          {item.name}
-        </Text>
+        <Text style={[styles.cardText]}>{item.name}</Text>
 
         {isSearching ? (
           isContactSaved ? (
@@ -185,13 +190,21 @@ export default function ContactsPage({ searchText }) {
               style={styles.addedButton}
               onPress={() => toggleContact(item)}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <Ionicons
                   name="checkmark-outline"
                   size={27}
                   style={{ color: theme.cardBackground }}
                 />
-                <Text style={{ color: theme.cardBackground, fontSize: 16 }}>Added</Text>
+                <Text style={{ color: theme.cardBackground, fontSize: 16 }}>
+                  Added
+                </Text>
               </View>
             </TouchableOpacity>
           ) : (
@@ -200,7 +213,13 @@ export default function ContactsPage({ searchText }) {
               style={styles.addButton}
               onPress={() => toggleContact(item)}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <Ionicons
                   name="add"
                   size={27}
@@ -265,8 +284,7 @@ export default function ContactsPage({ searchText }) {
         )}
       </View>
     );
-
-  }
+  };
 
   return (
     <View style={styles.container}>
@@ -298,7 +316,8 @@ export default function ContactsPage({ searchText }) {
             <TouchableOpacity
               style={styles.priorityButton}
               onPress={() => updatePriority("Red Flag")}
-            ><Ionicons
+            >
+              <Ionicons
                 name="flag-outline"
                 size={22}
                 style={styles.primaryTextColorIcon}
@@ -323,12 +342,12 @@ export default function ContactsPage({ searchText }) {
               size={22}
               style={{ color: theme.cardBackground }}
             />
-            <Text style={{ color: theme.cardBackground, size: 18 }}>Cancel</Text>
+            <Text style={{ color: theme.cardBackground, size: 18 }}>
+              Cancel
+            </Text>
           </TouchableOpacity>
-
         </View>
       )}
-
     </View>
   );
 }
@@ -339,7 +358,7 @@ const getStyles = (theme) =>
     container: {
       flex: 1,
       padding: 10,
-      backgroundColor: theme.background
+      backgroundColor: theme.background,
     },
     text: {
       fontSize: 18,
@@ -383,7 +402,7 @@ const getStyles = (theme) =>
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: theme.background + 'F2',
+      backgroundColor: theme.background + "F2",
       justifyContent: "center",
       alignItems: "center",
     },
@@ -411,12 +430,12 @@ const getStyles = (theme) =>
       justifyContent: "center",
       flex: 1,
       marginHorizontal: 5,
-      backgroundColor: theme.cardBackground
+      backgroundColor: theme.cardBackground,
     },
     overlayClose: {
-      flexDirection: 'row',
+      flexDirection: "row",
       alignItems: "center",
-      alignSelf: 'flex-end',
+      alignSelf: "flex-end",
       marginHorizontal: 50,
       paddingVertical: 5,
       paddingHorizontal: 15,
@@ -443,7 +462,6 @@ const getStyles = (theme) =>
       shadowOffset: { width: 4, height: 4 },
       shadowOpacity: 0.25,
       shadowRadius: 4,
-
     },
     addedButton: {
       backgroundColor: theme.text,
@@ -454,5 +472,5 @@ const getStyles = (theme) =>
       shadowOffset: { width: 4, height: 4 },
       shadowOpacity: 0.25,
       shadowRadius: 4,
-    }
+    },
   });
