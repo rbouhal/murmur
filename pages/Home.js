@@ -15,8 +15,11 @@ import CustomCard from "../components/CustomCard";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import {
   sendAudioToAzure,
+  startAzureListening,
+  stopAzureListening,
 } from "../services/network";
 import { Audio } from "expo-av";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const recordingOptions = {
   isMeteringEnabled: false,
@@ -42,23 +45,22 @@ const recordingOptions = {
 };
 
 export default function Home() {
+  const [isTracking, setIsTracking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const [recording, setRecording] = useState(null);
+  const [currentSound, setCurrentSound] = useState(null);
   const [activeRecordingType, setActiveRecordingType] = useState(null);
+  const [playingType, setPlayingType] = useState(null);
 
   const [redFlagSafeWord, setRedFlagSafeWord] = useState("");
   const [emergencySafeWord, setEmergencySafeWord] = useState("");
 
-  const [recordingRedFlag, setRecordingRedFlag] = useState(null);
-  const [recordingEmergency, setRecordingEmergency] = useState(null);
-
-  const [redFlagSound, setRedFlagSound] = useState(null);
-  const [emergencySound, setEmergencySound] = useState(null);
+  const [redFlagRecording, setRedFlagRecording] = useState(null);
+  const [emergencyRecording, setEmergencyRecording] = useState(null);
 
   const [showRedFlagWord, setShowRedFlagWord] = useState(false);
   const [showEmergencyWord, setShowEmergencyWord] = useState(false);
-
-  const [isTracking, setIsTracking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [recording, setRecording] = useState();
 
   const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
@@ -67,133 +69,48 @@ export default function Home() {
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
-  // Handle switch toggle
-  const toggleListening = (value) => {
-    setIsListening(value);
-    if (value) {
-      // Todo
-    } else {
-      // Todo
-    }
-  };
-
-  async function startRecording() {
-    try {
-      if (permissionResponse.status !== "granted") {
-        console.log("Requesting Permission");
-        await requestPermission();
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      console.log("Start recording...");
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
-      setRecording(recording);
-      console.log("Recording Started");
-    } catch (err) {
-      console.log("Failed to start recording", err);
-    }
-  }
-
-  async function stopRecording(type) {
-    console.log("Stopping recording..");
-    setRecording(undefined);
-
-    await recording.stopAndUnloadAsync();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-    });
-    const uri = recording.getURI();
-    console.log(`${type} recording stored at:`, uri);
-
-    const response = await sendAudioToAzure(uri);
-    console.log("Response: ", response);
-    const recognizedText = response?.DisplayText || "";
-    cleanedText = recognizedText.replace(/[!.,]/g, "");
-    console.log("Stripped text", cleanedText);
-
-    if (type === "redFlag") {
-      if (cleanedText !== "" && cleanedText) {
-        setRecordingRedFlag(recording);
-      } else {
-        setRecordingRedFlag(null);
-      }
-      setRedFlagSafeWord(cleanedText);
-    } else if (type === "emergency") {
-      if (cleanedText !== "" && cleanedText) {
-        setRecordingEmergency(recording);
-      } else {
-        setRecordingEmergency(null);
-      }
-      setEmergencySafeWord(cleanedText);
-    }
-
-    return cleanedText;
-  }
-
-  // Playback for Red Flag
-  async function playRedFlagRecording() {
-    try {
-      if (!recordingRedFlag) {
-        Alert.alert(
-          "No Red Flag recording",
-          "Please record a Red Flag safe word first."
+  /**
+   * Stores recordings/safe words
+   */
+  useEffect(() => {
+    const loadPersistedData = async () => {
+      try {
+        const storedRedFlagRecording = await AsyncStorage.getItem(
+          "redFlagRecording"
         );
-        return;
-      }
-      // If we already have a sound loaded, unload it first
-      if (redFlagSound) {
-        await redFlagSound.unloadAsync();
-        setRedFlagSound(null);
-      }
-      const { sound } = await Audio.Sound.createAsync({
-        uri: recordingRedFlag.getURI(),
-      });
-      setRedFlagSound(sound);
-
-      console.log("Playing Red Flag Sound...");
-      await sound.playAsync();
-    } catch (error) {
-      console.log("Error playing Red Flag recording:", error);
-    }
-  }
-
-  // Playback for Emergency
-  async function playEmergencyRecording() {
-    try {
-      if (!recordingEmergency) {
-        Alert.alert(
-          "No Emergency recording",
-          "Please record an Emergency trigger first."
+        const storedRedFlagSafeWord = await AsyncStorage.getItem(
+          "redFlagSafeWord"
         );
-        return;
+        const storedEmergencyRecording = await AsyncStorage.getItem(
+          "emergencyRecording"
+        );
+        const storedEmergencySafeWord = await AsyncStorage.getItem(
+          "emergencySafeWord"
+        );
+
+        if (storedRedFlagRecording) {
+          setRedFlagRecording(storedRedFlagRecording);
+        }
+        if (storedRedFlagSafeWord) {
+          setRedFlagSafeWord(storedRedFlagSafeWord);
+        }
+        if (storedEmergencyRecording) {
+          setEmergencyRecording(storedEmergencyRecording);
+        }
+        if (storedEmergencySafeWord) {
+          setEmergencySafeWord(storedEmergencySafeWord);
+        }
+      } catch (error) {
+        console.error("Error loading persisted data:", error);
       }
-      if (emergencySound) {
-        await emergencySound.unloadAsync();
-        setEmergencySound(null);
-      }
-      const { sound } = await Audio.Sound.createAsync({
-        uri: recordingEmergency.getURI(),
-      });
-      setEmergencySound(sound);
+    };
 
-      console.log("Playing Emergency Sound...");
-      await sound.playAsync();
-    } catch (error) {
-      console.log("Error playing Emergency recording:", error);
-    }
-  }
+    loadPersistedData();
+  }, []);
 
-  const handleInfoPress = () => {
-    setIsOverlayVisible(true);
-  };
-
-  const closeOverlay = () => {
-    setIsOverlayVisible(false);
-  };
-
+  /**
+   * Enables location tracking
+   */
   useEffect(() => {
     let intervalId;
 
@@ -233,6 +150,280 @@ export default function Home() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isTracking]);
+
+  /**
+   * Enables active listening in 10 second increments
+   */
+  useEffect(() => {
+    let cancelActiveListening = false;
+
+    const startActiveListeningLoop = async () => {
+      while (isListening && !cancelActiveListening) {
+        console.log("Starting active listening segment...");
+        await activeListener();
+        console.log("Active listening segment finished.");
+      }
+    };
+
+    if (isListening) {
+      startActiveListeningLoop();
+    }
+    return () => {
+      cancelActiveListening = true;
+    };
+  }, [isListening, redFlagSafeWord, emergencySafeWord]);
+
+  // Handle switch toggle
+  const toggleListening = async (value) => {
+    setIsListening(value);
+    console.log(
+      value ? "Active listening enabled" : "Active listening disabled"
+    );
+  };
+
+  function redFlagTriggerEvent() {
+    console.log("Red Flag safe word detected!");
+    Alert.alert("Red Flag Detected", "Red Flag safe word was detected!");
+    /**
+     * implement functionality for red flag trigger event
+     */
+  }
+
+  function emergencyTriggerEvent() {
+    console.log("Emergency safe word detected!");
+    Alert.alert("Emergency Detected", "Emergency safe word was detected!");
+    /**
+     * implement functionality for emergency trigger event
+     */
+  }
+
+  async function activeListener() {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: segmentRecording } = await Audio.Recording.createAsync(
+        recordingOptions
+      );
+      console.log("Active listening segment recording started");
+
+      await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait for 10 seconds
+
+      await segmentRecording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = segmentRecording.getURI();
+      console.log("Active listening segment recorded at:", uri);
+
+      if (uri) {
+        const response = await sendAudioToAzure(uri);
+        const recognizedText = response?.DisplayText || "";
+        const cleanedText = recognizedText
+          .replace(/[!.,]/g, "")
+          .trim()
+          .toLowerCase();
+        console.log("Active listening recognized text:", cleanedText);
+
+        // Recognizes safe words in audio segment. If both words are said in the same segment; Emergency word takes precedence
+        if (
+          emergencySafeWord &&
+          cleanedText.includes(emergencySafeWord.toLowerCase())
+        ) {
+          emergencyTriggerEvent();
+        } else if (
+          redFlagSafeWord &&
+          cleanedText.includes(redFlagSafeWord.toLowerCase())
+        ) {
+          redFlagTriggerEvent();
+        }
+      }
+    } catch (err) {
+      console.error("Error during active listening segment:", err);
+    }
+  }
+
+  async function startRecording(type) {
+    try {
+      if (recording && activeRecordingType) {
+        console.log(`Stopping previous recording for ${activeRecordingType}`);
+        await stopRecording(activeRecordingType);
+      }
+
+      if (permissionResponse.status !== "granted") {
+        console.log("Requesting Permission");
+        await requestPermission();
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      console.log(`Start ${type} recording...`);
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        recordingOptions
+      );
+      setRecording(newRecording);
+      setActiveRecordingType(type);
+      console.log(`${type} Recording Started`);
+    } catch (err) {
+      console.log("Failed to start recording", err);
+    }
+  }
+
+  async function stopRecording(type) {
+    if (!recording) {
+      console.warn(`No active recording to stop for ${type}`);
+      return;
+    }
+
+    console.log(`Stopping ${type} recording..`);
+    await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+    });
+
+    const uri = recording.getURI();
+    console.log(`${type} recording stored at:`, uri);
+
+    setRecording(null);
+    setActiveRecordingType(null);
+
+    try {
+      const response = await sendAudioToAzure(uri);
+      console.log("Response: ", response);
+      const recognizedText = response?.DisplayText || "";
+      cleanedText = recognizedText.replace(/[!.,]/g, "");
+      console.log("Stripped text", cleanedText);
+
+      if (cleanedText !== "") {
+        if (type === "redFlag") {
+          setRedFlagRecording(uri);
+          setRedFlagSafeWord(cleanedText);
+          await AsyncStorage.setItem("redFlagRecording", uri);
+          await AsyncStorage.setItem("redFlagSafeWord", cleanedText);
+        } else if (type === "emergency") {
+          setEmergencyRecording(uri);
+          setEmergencySafeWord(cleanedText);
+          await AsyncStorage.setItem("emergencyRecording", uri);
+          await AsyncStorage.setItem("emergencySafeWord", cleanedText);
+        }
+      }
+    } catch (err) {
+      console.error(`Error sending ${type} recording to Azure:`, err);
+    }
+  }
+
+  // Playback for Red Flag
+  async function playRedFlagRecording() {
+    try {
+      if (!redFlagRecording) {
+        Alert.alert(
+          "No Red Flag recording",
+          "Please record a Red Flag safe word first."
+        );
+        return;
+      }
+      console.log("Red Flag recording URI:", redFlagRecording);
+
+      if (playingType === "redFlag") {
+        if (currentSound) {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+        }
+      } else {
+        if (currentSound) {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+        }
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+        });
+
+        const { sound } = await Audio.Sound.createAsync({
+          uri: redFlagRecording,
+        });
+
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) {
+            setCurrentSound(null);
+            setPlayingType(null);
+          }
+        });
+
+        setCurrentSound(sound);
+        setPlayingType("redFlag");
+        console.log("Playing Red Flag Sound...");
+        await sound.playAsync();
+      }
+    } catch (error) {
+      console.log("Error playing Red Flag recording:", error);
+    }
+  }
+
+  // Playback for Emergency
+  async function playEmergencyRecording() {
+    try {
+      if (!emergencyRecording) {
+        Alert.alert(
+          "No Emergency recording",
+          "Please record an Emergency trigger first."
+        );
+        return;
+      }
+      console.log("Emergency recording URI:", emergencyRecording);
+
+      if (playingType === "emergency") {
+        if (currentSound) {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+        }
+      } else {
+        if (currentSound) {
+          await currentSound.stopAsync();
+          await currentSound.unloadAsync();
+          setCurrentSound(null);
+          setPlayingType(null);
+        }
+
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+        });
+
+        const { sound } = await Audio.Sound.createAsync({
+          uri: emergencyRecording,
+        });
+
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) {
+            setCurrentSound(null);
+            setPlayingType(null);
+          }
+        });
+
+        setCurrentSound(sound);
+        setPlayingType("emergency");
+        console.log("Playing Emergency Sound...");
+        await sound.playAsync();
+      }
+    } catch (error) {
+      console.log("Error playing Emergency recording:", error);
+    }
+  }
+
+  const handleInfoPress = () => {
+    setIsOverlayVisible(true);
+  };
+
+  const closeOverlay = () => {
+    setIsOverlayVisible(false);
+  };
 
   return (
     <ScrollView
@@ -290,7 +481,7 @@ export default function Home() {
             value={isListening}
             onValueChange={toggleListening}
             thumbColor={theme.text}
-            trackColor={{ false: theme.secondary, true: theme.secondary }}
+            trackColor={{ false: theme.secondary, true: theme.primary }}
           />
         </View>
       </CustomCard>
@@ -324,17 +515,10 @@ export default function Home() {
             <Text style={[styles.cardH1, { color: theme.text }]}>Red Flag</Text>
             <TouchableOpacity
               onPress={() => {
-                if (activeRecordingType === "redFlag") {
-                  stopRecording("redFlag");
-                  setActiveRecordingType(null);
-                } else if (activeRecordingType === "emergency") {
-                  stopRecording("emergency");
-                  setActiveRecordingType("redFlag");
-                  startRecording();
+                if (!recording) {
+                  startRecording("redFlag");
                 } else {
-                  // activeRecordingType is null
-                  startRecording();
-                  setActiveRecordingType("redFlag");
+                  stopRecording("redFlag");
                 }
               }}
               style={
@@ -344,10 +528,12 @@ export default function Home() {
               <Ionicons
                 name="mic"
                 size={33}
-                style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                style={[
+                  styles.secondaryColorIcon,
+                  { textAlign: "center", paddingVertical: 15 },
+                ]}
               />
             </TouchableOpacity>
-
           </View>
           <View style={styles.borderBox}>
             <Ionicons
@@ -355,30 +541,30 @@ export default function Home() {
               size={22}
               style={styles.primaryTextColorIcon}
             />
-            <Text style={[styles.cardH1, { color: theme.text }]}>Emergency</Text>
+            <Text style={[styles.cardH1, { color: theme.text }]}>
+              Emergency
+            </Text>
             <TouchableOpacity
               onPress={() => {
-                if (activeRecordingType === "emergency") {
-                  stopRecording("emergency");
-                  setActiveRecordingType(null);
-                } else if (activeRecordingType === "redFlag") {
-                  stopRecording("redFlag");
-                  setActiveRecordingType("emergency");
-                  startRecording();
+                if (!recording) {
+                  startRecording("emergency");
                 } else {
-                  // activeRecordingType is null
-                  startRecording();
-                  setActiveRecordingType("emergency");
+                  stopRecording("emergency");
                 }
               }}
               style={
-                activeRecordingType === "emergency" ? styles.micOn : styles.micOff
+                activeRecordingType === "emergency"
+                  ? styles.micOn
+                  : styles.micOff
               }
             >
               <Ionicons
                 name="mic"
                 size={33}
-                style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                style={[
+                  styles.secondaryColorIcon,
+                  { textAlign: "center", paddingVertical: 15 },
+                ]}
               />
             </TouchableOpacity>
           </View>
@@ -390,7 +576,6 @@ export default function Home() {
           </Text>
         </View>
         <View style={{ flexDirection: "row" }}>
-
           {/* Red Flag Box */}
           <View style={styles.borderBox}>
             <Ionicons
@@ -417,18 +602,23 @@ export default function Home() {
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={playRedFlagRecording}>
+                <TouchableOpacity onPress={() => playRedFlagRecording()}>
                   <Ionicons
-                    name="play-circle"
+                    name={
+                      playingType === "redFlag" ? "stop-circle" : "play-circle"
+                    }
                     size={32}
-                    style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                    style={[
+                      styles.secondaryColorIcon,
+                      { textAlign: "center", paddingVertical: 15 },
+                    ]}
                   />
                 </TouchableOpacity>
               </>
             )}
             {!redFlagSafeWord && (
               <View style={styles.transparentPill}>
-                <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+                <Text style={[{ color: theme.text, textAlign: "center" }]}>
                   No Recording
                 </Text>
               </View>
@@ -442,7 +632,9 @@ export default function Home() {
               size={22}
               style={styles.primaryTextColorIcon}
             />
-            <Text style={[styles.cardH1, { color: theme.text }]}>Emergency</Text>
+            <Text style={[styles.cardH1, { color: theme.text }]}>
+              Emergency
+            </Text>
 
             {/* Eye Icon and Safe Word */}
             {emergencySafeWord && (
@@ -474,18 +666,25 @@ export default function Home() {
                 </TouchableOpacity>
 
                 {/* Play Button */}
-                <TouchableOpacity onPress={playEmergencyRecording}>
+                <TouchableOpacity onPress={() => playEmergencyRecording()}>
                   <Ionicons
-                    name="play-circle"
+                    name={
+                      playingType === "emergency"
+                        ? "stop-circle"
+                        : "play-circle"
+                    }
                     size={32}
-                    style={[styles.secondaryColorIcon, { textAlign: "center", paddingVertical: 15 }]}
+                    style={[
+                      styles.secondaryColorIcon,
+                      { textAlign: "center", paddingVertical: 15 },
+                    ]}
                   />
                 </TouchableOpacity>
               </>
             )}
             {!emergencySafeWord && (
               <View style={styles.transparentPill}>
-                <Text style={[{ color: theme.text, textAlign: 'center' }]}>
+                <Text style={[{ color: theme.text, textAlign: "center" }]}>
                   No Recording
                 </Text>
               </View>
@@ -504,25 +703,37 @@ export default function Home() {
         <View style={styles.overlayContainer}>
           <View style={styles.overlayContent}>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              First, set up your voice profile and record your safe words on the Home Page.
+              First, set up your voice profile and record your safe words on the
+              Home Page.
             </Text>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              Next, go to the Contacts page to add existing or custom contacts, assigning them a priority level:
+              Next, go to the Contacts page to add existing or custom contacts,
+              assigning them a priority level:
             </Text>
             <Text style={[styles.overlayText, { color: theme.text }]}>
               <Ionicons name="flag-outline" size={16} color={theme.text} />{" "}
-              <Text style={{ fontWeight: 'bold' }}>Red Flag:</Text> A situation that feels unsafe or distressing but does not require immediate intervention.{"\n\n"}
-              <Ionicons name="warning-outline" size={16} color={theme.text} />{" "}
-              <Text style={{ fontWeight: 'bold' }}>Emergency:</Text> A crisis where your safety is in immediate danger and urgent help is needed.
+              <Text style={{ fontWeight: "bold" }}>Red Flag:</Text> A situation
+              that feels unsafe or distressing but does not require immediate
+              intervention.{"\n\n"}
+              <Ionicons
+                name="warning-outline"
+                size={16}
+                color={theme.text}
+              />{" "}
+              <Text style={{ fontWeight: "bold" }}>Emergency:</Text> A crisis
+              where your safety is in immediate danger and urgent help is
+              needed.
             </Text>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              Optionally, Enable Location sharing to include your live location in automated messages.
+              Optionally, Enable Location sharing to include your live location
+              in automated messages.
             </Text>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              Once set up, turn on Enable Listening to detect safe words and send alerts to your contacts.
+              Once set up, turn on Enable Listening to detect safe words and
+              send alerts to your contacts.
             </Text>
             <Text style={[styles.overlayText, { color: theme.text }]}>
-              Shhhhhh...<Text style={{ fontWeight: 'bold' }}>murmur</Text>
+              Shhhhhh...<Text style={{ fontWeight: "bold" }}>murmur</Text>
             </Text>
             <TouchableOpacity style={styles.closeButton} onPress={closeOverlay}>
               <Text style={styles.closeButtonText}>Close</Text>
@@ -568,7 +779,7 @@ const getStyles = (theme) =>
     },
     p: {
       paddingLeft: 15,
-      paddingVertical: 10
+      paddingVertical: 10,
     },
     infoIcon: {
       marginLeft: 8,
@@ -633,7 +844,7 @@ const getStyles = (theme) =>
       borderRadius: 20,
       width: 140,
       marginHorizontal: 20,
-      padding: 10
+      padding: 10,
     },
 
     emptyBox: {
@@ -642,7 +853,7 @@ const getStyles = (theme) =>
       borderRadius: 20,
       paddingVertical: 5,
       paddingHorizontal: 6,
-      backgroundColor: theme.text + '40',  // '40' represents 25% opacity in hex
+      backgroundColor: theme.text + "40", // '40' represents 25% opacity in hex
       marginVertical: 15,
     },
 
@@ -652,12 +863,11 @@ const getStyles = (theme) =>
       height: "100%",
       overflow: "hidden",
       alignItems: "center",
-
     },
 
     micOn: {
-      textAlign: 'center',
-      backgroundColor: theme.primary + '40',
+      textAlign: "center",
+      backgroundColor: theme.primary + "40",
       borderWidth: 1,
       borderColor: theme.primary,
       borderRadius: 50,
@@ -668,11 +878,11 @@ const getStyles = (theme) =>
     },
 
     transparentPill: {
-      backgroundColor: theme.text + '40',
+      backgroundColor: theme.text + "40",
       paddingVertical: 5,
       borderRadius: 20,
       borderColor: theme.text,
       borderWidth: 0.25,
-      marginVertical: 18
-    }
+      marginVertical: 18,
+    },
   });

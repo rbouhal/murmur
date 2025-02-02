@@ -1,8 +1,10 @@
 import axios from "axios";
+import "react-native-get-random-values";
+import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
 import * as FileSystem from "expo-file-system";
 import { decode } from "base64-arraybuffer";
 import { EXPO_AZURE_API_KEY, EXPO_AZURE_ENDPOINT } from "@env";
-
+import Constants from "expo-constants";
 
 export async function sendAudioToAzure(uri) {
   try {
@@ -26,4 +28,3 @@ export async function sendAudioToAzure(uri) {
     console.error("Azure STT error", err);
   }
 }
-

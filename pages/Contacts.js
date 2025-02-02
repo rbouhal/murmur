@@ -163,14 +163,14 @@ export default function ContactsPage({ searchText }) {
           <Ionicons
             name="flag"
             size={20}
-            style={{ color: theme.primary, marginLeft: 10 }}
+            style={{ color: theme.text, marginHorizontal: 10 }}
           />
         )}
         {!isSearching && isContactSaved && savedContacts[item.id].priority === "Emergency" && (
           <Ionicons
             name="warning"
             size={20}
-            style={{ color: theme.secondary, marginLeft: 10 }}
+            style={{ color: theme.text, marginHorizontal: 10 }}
           />
         )}
 
