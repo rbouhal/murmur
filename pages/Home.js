@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -14,7 +15,7 @@ import * as FileSystem from "expo-file-system";
 import { useTheme } from "../context/ThemeContext";
 import CustomCard from "../components/CustomCard";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { sendAudioToAzure } from "../services/network";
+import { sendAudioToAzure, uploadRecordings, verifySpeaker, sendTextsToContacts } from "../services/network";
 import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -49,6 +50,8 @@ const recordingOptions = {
 
 export default function Home() {
   const [isTracking, setIsTracking] = useState(false);
+  const [location, setLocation] = useState(null);
+
   const [isListening, setIsListening] = useState(false);
 
   const [recording, setRecording] = useState(null);
@@ -67,8 +70,15 @@ export default function Home() {
 
   const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
-  const [location, setLocation] = useState(null);
+
+  const [isVoiceSetupVisible, setIsVoiceSetupVisible] = useState(false);
+  const [speakerVector, setSpeakerVector] = useState(null);
+
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [recordings, setRecordings] = useState([]);
+  const [savedContacts, setSavedContacts] = useState({});
   const [errorMsg, setErrorMsg] = useState(null);
+
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
@@ -77,9 +87,10 @@ export default function Home() {
 
   const canEnableListening = Boolean(
     redFlagSafeWord.trim() &&
-      redFlagRecording &&
-      emergencySafeWord.trim() &&
-      emergencyRecording
+    redFlagRecording &&
+    emergencySafeWord.trim() &&
+    emergencyRecording &&
+    Object.keys(savedContacts).length > 0
   );
 
   /**
@@ -90,6 +101,15 @@ export default function Home() {
       if (!user?.userId) {
         return;
       }
+
+      const hasSpeakerVector = await AsyncStorage.getItem("speakerVector");
+      if (hasSpeakerVector) {
+        setSpeakerVector(hasSpeakerVector);
+      }
+      else {
+        setIsVoiceSetupVisible(true);
+      }
+
 
       try {
         console.log(`Fetching recordings for user: ${user.userId}`);
@@ -180,48 +200,101 @@ export default function Home() {
     loadPersistedData();
   }, [user]);
 
-  /**
-   * Enables location tracking
-   */
-  useEffect(() => {
-    let intervalId;
 
-    const startTracking = async () => {
+  useEffect(() => {
+    if (recordings.length === 3) {
+      uploadRecordings(recordings, setIsVoiceSetupVisible, setRecordings, setPhraseIndex);
+    }
+  }, [recordings]);
+
+  /**
+   * Fetch user's saved contacts
+   */
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchSavedContacts = async () => {
+        try {
+          const data = await AsyncStorage.getItem("murmur_contacts");
+          if (data) {
+            console.log("Updated contacts:", JSON.parse(data));
+            setSavedContacts(JSON.parse(data));
+          }
+        } catch (error) {
+          console.error("Error fetching saved contacts:", error);
+        }
+      };
+      fetchSavedContacts();
+    }, [])
+  );
+
+  /**
+   * Retrieve User's Location
+   */
+  async function getCurrentLocation() {
+    try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setErrorMsg("Please enable location permissions.");
-        Alert.alert("Permission Denied", errorMsg);
-        return;
+        console.warn("Location permission not granted.");
+        Alert.alert("Permission Required", "Please enable location permissions in settings.");
+        return null;
       }
-
-      // Get the initial location
       const location = await Location.getCurrentPositionAsync({});
-      setLocation(location);
-
-      // Update location every 30 minutes
-      intervalId = setInterval(async () => {
-        try {
-          const updatedLocation = await Location.getCurrentPositionAsync({});
-          setLocation(updatedLocation);
-        } catch (error) {
-          console.error("Error fetching location:", error);
-          setErrorMsg("Failed to fetch location.");
-        }
-      }, 30 * 60 * 1000); // 30 minutes
-    };
-
-    if (isTracking) {
-      startTracking();
-    } else {
-      // Stop tracking
-      if (intervalId) clearInterval(intervalId);
-      setLocation(null);
+      return location;
+    } catch (error) {
+      console.error("Error fetching location:", error);
+      return null;
     }
+  }
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [isTracking]);
+  /**
+   * Start voice recording for verification
+   */
+  async function startVoiceRecording() {
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(recordingOptions);
+      setRecording(newRecording);
+      console.log(`Recording phrase ${phraseIndex + 1} started...`);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+      Alert.alert("Error", "Could not start recording. Please try again.");
+    }
+  }
+
+  /**
+   * Stop voice recording and send it to Azure for verification
+   */
+  async function stopVoiceRecording() {
+    if (!recording) return;
+
+    try {
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      const uri = recording.getURI();
+      console.log(`Recording ${phraseIndex + 1} saved at:`, uri);
+
+      setRecordings((prev) => [...prev, uri]);
+      setPhraseIndex((prev) => prev + 1);
+
+      if (phraseIndex < 2) {
+        startRecording(); // Start next phrase automatically
+      }
+    } catch (error) {
+      console.error("Error stopping recording:", error);
+      Alert.alert("Error", "Could not stop recording. Please try again.");
+    } finally {
+      setRecording(null);
+    }
+  }
+
+
+  
 
   /**
    * Enables active listening in 10 second increments
@@ -256,6 +329,8 @@ export default function Home() {
       );
       return; // Do not enable listening.
     }
+
+
     if (value && recording) {
       console.log(
         "Listening toggle turned off while a recording is progress; discarding recording."
@@ -274,21 +349,6 @@ export default function Home() {
     );
   };
 
-  function redFlagTriggerEvent() {
-    console.log("Red Flag safe word detected!");
-    Alert.alert("Red Flag Detected", "Red Flag safe word was detected!");
-    /**
-     * implement functionality for red flag trigger event
-     */
-  }
-
-  function emergencyTriggerEvent() {
-    console.log("Emergency safe word detected!");
-    Alert.alert("Emergency Detected", "Emergency safe word was detected!");
-    /**
-     * implement functionality for emergency trigger event
-     */
-  }
 
   async function activeListenerForeground() {
     try {
@@ -302,7 +362,7 @@ export default function Home() {
       );
       console.log("Foreground active listening segment recording started");
 
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait for 10 seconds
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait for 5 seconds
 
       await segmentRecording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
@@ -321,17 +381,23 @@ export default function Home() {
           cleanedText
         );
 
-        // Recognizes safe words in audio segment. If both words are said in the same segment; Emergency word takes precedence
-        if (
-          emergencySafeWord &&
-          cleanedText.includes(emergencySafeWord.toLowerCase())
-        ) {
-          emergencyTriggerEvent();
-        } else if (
-          redFlagSafeWord &&
-          cleanedText.includes(redFlagSafeWord.toLowerCase())
-        ) {
-          redFlagTriggerEvent();
+        const isVerified = await verifySpeaker(uri);
+
+        if (isVerified) {
+          // Recognizes safe words in audio segment. If both words are said in the same segment, Emergency word takes precedence
+          if (
+            emergencySafeWord &&
+            cleanedText.includes(emergencySafeWord.toLowerCase())
+          ) {
+            sendTextsToContacts("emergency", location)
+          } else if (
+            redFlagSafeWord &&
+            cleanedText.includes(redFlagSafeWord.toLowerCase())
+          ) {
+            sendTextsToContacts("redFlag", location)
+          }
+        } else {
+          console.log("Speaker verification failed. Ignoring safe word detection.");
         }
       }
     } catch (err) {
@@ -655,6 +721,12 @@ export default function Home() {
     setIsOverlayVisible(false);
   };
 
+  const phrases = [
+    '"My voice is my identity. I speak naturally and clearly."',
+    '"My voice represents me. I speak so that I can be understood."',
+    '"The way I talk is unique to me. I say my words with clarity."',
+  ];
+
   return (
     <ScrollView
       style={styles.container}
@@ -689,7 +761,20 @@ export default function Home() {
           </View>
           <Switch
             value={isTracking}
-            onValueChange={setIsTracking}
+            onValueChange={async (value) => {
+              setIsTracking(value);
+              if (value) {
+                // Fetch location when switch is turned on
+                const locationData = await getCurrentLocation();
+                if (locationData) {
+                  setLocation(locationData);
+                } else {
+                  setIsTracking(false); // Revert switch if permission is denied
+                }
+              } else {
+                setLocation(null); // Reset location when tracking is disabled
+              }
+            }}
             thumbColor={theme.text}
             trackColor={{ false: theme.secondary, true: theme.secondary }}
           />
@@ -1007,6 +1092,34 @@ export default function Home() {
           </View>
         </View>
       </Modal>
+
+      {/* Voice Profile Setup Overlay */}
+      <Modal visible={isVoiceSetupVisible} transparent animationType="fade">
+        <View style={styles.voiceProfileContainter}>
+          <View style={styles.voiceProfileContent}>
+            <Text style={[styles.cardH2, { color: theme.text, marginVertical: 15 }]}>
+              Setup: Voice Profile Authentication
+            </Text>
+            <Text style={[styles.voiceOverlayText, { color: theme.text }]}>
+              Your voice profile ensures that only your voice is recognized, allowing you to securely trigger your safe word and access help when needed.
+            </Text>
+            <Text style={[styles.cardH3, { color: theme.text }]}>
+              Please read the following phrase aloud:
+            </Text>
+            <Text style={[styles.phraseText, { color: theme.text }]}>{phrases[phraseIndex]}</Text>
+            <TouchableOpacity
+              style={styles.setupButton}
+              onPress={recording ? stopVoiceRecording : startVoiceRecording}
+            >
+              <Ionicons name={recording ? "stop-circle" : "mic-circle"} size={40} color={theme.primary} />
+              <Text style={styles.setupButtonText}>
+                {recording ? "Stop Recording" : "Start Recording"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
@@ -1043,6 +1156,20 @@ const getStyles = (theme) =>
       fontWeight: "600",
       fontSize: 16,
     },
+    cardH2: {
+      fontWeight: "700",
+      fontSize: 16,
+    },
+    cardH3: {
+      fontWeight: "700",
+      fontSize: 14,
+    },
+    phraseText: {
+      fontSize: 18,
+      fontWeight: "bold",
+      marginVertical: 20,
+      textAlign: "center",
+    },
     p: {
       paddingLeft: 15,
       paddingVertical: 10,
@@ -1076,6 +1203,24 @@ const getStyles = (theme) =>
     permissionText: {
       fontSize: 16,
     },
+    voiceProfileContainter: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: theme.background + 'E1',
+    },
+    voiceProfileContent: {
+      backgroundColor: theme.cardBackground,
+      padding: 20,
+      borderRadius: 15,
+      width: "80%",
+      alignItems: "left",
+      // iOS Shadow
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
     overlayContainer: {
       flex: 1,
       justifyContent: "center",
@@ -1092,6 +1237,11 @@ const getStyles = (theme) =>
     overlayText: {
       fontSize: 16,
       marginBottom: 16,
+    },
+    voiceOverlayText: {
+      fontSize: 14,
+      marginBottom: 16,
+      textAlign: "center",
     },
     closeButton: {
       backgroundColor: theme.primary,
@@ -1150,5 +1300,26 @@ const getStyles = (theme) =>
       borderColor: theme.text,
       borderWidth: 0.25,
       marginVertical: 18,
+    },
+    setupButton: {
+      flexDirection: 'row',
+      backgroundColor: theme.secondary,
+      borderRadius: 50,
+      alignItems: 'center',
+      alignSelf: 'center',
+      marginVertical: 25,
+      paddingHorizontal: 30,
+      paddingVertical: 6,
+      shadowColor: theme.text,
+      shadowOffset: { width: 4, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    setupButtonText: {
+      color: theme.cardBackground,
+      marginHorizontal: 5,
+      paddingVertical: 5,
+      fontSize: 16,
+      alignSelf: 'center',
     },
   });

@@ -34,6 +34,7 @@ export default function ContactsPage({ searchText }) {
       if (data) {
         setSavedContacts(JSON.parse(data));
       }
+      console.log(data)
       return data;
     } catch (error) {
       console.error("Error fetching saved contacts:", error);

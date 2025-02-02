@@ -11,33 +11,45 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SQLiteProvider } from "expo-sqlite";
 import { loadDatabase } from "./services/database";
 import { AuthProvider } from "./providers/AuthProvider";
+import { loadModels, unloadModels } from "./services/network";
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [dbLoaded, setDbLoaded] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   useEffect(() => {
     const prepareApp = async () => {
       try {
-        loadDatabase()
-          .then(() => setDbLoaded(true))
-          .catch((e) => console.error(e));
         await SplashScreen.preventAutoHideAsync();
+        
+        // Load database
+        await loadDatabase();
+        setDbLoaded(true);
+
         // Load fonts
         await Font.loadAsync({
           CustomFont: require("./assets/fonts/Alkia.ttf"),
         });
-
         setFontsLoaded(true);
 
-        setTimeout(async () => {
-          await SplashScreen.hideAsync();
-        }, 1000);
+        // Load Vosk models
+        const response = await loadModels();
+        if (response && response.message === "Models loaded successfully.") {
+          setModelsLoaded(true);
+        } else {
+          setModelsLoaded(false);
+          throw new Error("Failed to load models.");
+        }
+
+        // Hide splash screen only when all resources are ready
+        await SplashScreen.hideAsync();
       } catch (e) {
-        console.error("Error loading resources:", e);
+        console.error("Error initializing app:", e);
       }
     };
+
     prepareApp();
   }, []);
 
@@ -48,8 +60,6 @@ export default function App() {
         setIsLoggedIn(loginStatus === "true");
       } catch (error) {
         console.error("Error checking login status:", error);
-      } finally {
-        setIsLoading(false);
       }
     };
 
@@ -60,6 +70,7 @@ export default function App() {
     try {
       await AsyncStorage.removeItem("isLoggedIn");
       setIsLoggedIn(false); // Reset login state
+      await unloadModels();
     } catch (error) {
       console.error("Error during logout:", error);
     }
@@ -73,7 +84,7 @@ export default function App() {
       </View>
     );
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || !modelsLoaded) {
     return null; // display splash until fonts loaded
   }
 
